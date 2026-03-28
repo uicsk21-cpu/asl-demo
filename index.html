@@ -10,15 +10,16 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg:        #0d0f1c;
-      --panel:     #12152b;
-      --accent:    #00d4ff;
-      --green:     #00e87a;
-      --text:      #f0f2ff;
-      --muted:     #4a5070;
-      --btn:       #3a2d9c;
-      --btn-hover: #5040c0;
-      --border:    #ffffff14;
+      --bg:      #0d0f1c;
+      --panel:   #12152b;
+      --accent:  #00d4ff;
+      --green:   #00e87a;
+      --amber:   #ffb830;
+      --text:    #f0f2ff;
+      --muted:   #4a5070;
+      --btn:     #3a2d9c;
+      --btnhov:  #5040c0;
+      --border:  #ffffff14;
     }
 
     html, body {
@@ -30,259 +31,281 @@
       -webkit-tap-highlight-color: transparent;
     }
 
-    /* ── App shell ─────────────────────────────── */
+    /* ── App shell ──────────────────────────────────────────────── */
     #app {
       display: flex;
       flex-direction: column;
-      height: 100dvh;   /* dynamic viewport — hides mobile address bar */
-      height: 100vh;    /* fallback */
+      height: 100dvh;
+      height: 100vh; /* fallback */
     }
 
-    /* ── Camera panel ──────────────────────────── */
+    /* ── Camera panel ───────────────────────────────────────────── */
     #cam-panel {
       position: relative;
-      flex: 0 0 56%;
+      flex: 0 0 57%;
       background: #000;
       overflow: hidden;
     }
 
     #video {
-      width: 100%;
-      height: 100%;
+      width: 100%; height: 100%;
       object-fit: cover;
-      transform: scaleX(-1);   /* mirror for natural selfie view */
+      transform: scaleX(-1);
       display: block;
     }
 
     #skeleton-canvas {
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      /* canvas is drawn un-mirrored; we flip here to match video */
-      transform: scaleX(-1);
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+      transform: scaleX(-1);   /* mirror to match video */
       pointer-events: none;
     }
 
-    /* Status chip top-left */
+    /* Status chip */
     #status {
       position: absolute;
-      top: 12px;
-      left: 12px;
-      padding: 5px 14px;
+      top: 10px; left: 10px;
+      padding: 4px 12px;
       border-radius: 20px;
-      font-size: 0.72rem;
-      font-weight: 600;
-      letter-spacing: 0.08em;
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.09em;
       text-transform: uppercase;
       backdrop-filter: blur(8px);
       -webkit-backdrop-filter: blur(8px);
-      transition: color 0.3s, border-color 0.3s;
+      transition: color .3s, border-color .3s;
     }
-    #status.loading  { color: var(--muted);  border: 1px solid var(--muted);  background: #0008; }
-    #status.waiting  { color: var(--muted);  border: 1px solid var(--muted);  background: #0008; }
-    #status.detected { color: var(--green);  border: 1px solid var(--green);  background: #00e87a18; }
-    #status.error    { color: #ff5f72;       border: 1px solid #ff5f72;       background: #ff5f7218; }
+    #status.loading  { color: var(--muted); border: 1px solid var(--muted); background:#0008; }
+    #status.waiting  { color: var(--muted); border: 1px solid var(--muted); background:#0008; }
+    #status.detected { color: var(--green); border: 1px solid var(--green); background:#00e87a12; }
+    #status.error    { color: #ff5f72;      border: 1px solid #ff5f72;      background:#ff5f7212; }
 
-    /* Detected-letter badge bottom-left of camera */
+    /* Camera-switch button */
+    #cam-switch {
+      position: absolute; top: 8px; right: 10px;
+      background: rgba(0,0,0,.55);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text); font-size: 1.2rem;
+      padding: 6px 9px;
+      cursor: pointer; touch-action: manipulation;
+      backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    }
+
+    /* ── Top-3 candidates overlay (top-right) ────────────────────── */
+    #top3 {
+      position: absolute; top: 10px; right: 52px;
+      display: flex; flex-direction: column; gap: 5px;
+      padding: 8px 10px;
+      background: rgba(0,0,0,.70);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      min-width: 170px;
+    }
+
+    .cand {
+      display: flex; align-items: center; gap: 7px;
+      opacity: 0.35;
+      transition: opacity .2s;
+    }
+    .cand.active { opacity: 1; }
+
+    .cand-ltr {
+      font-size: 1.5rem; font-weight: 900;
+      color: var(--accent);
+      width: 26px; text-align: center; line-height: 1;
+    }
+    .cand:nth-child(2) .cand-ltr { font-size: 1.1rem; color: #a0c8d8; }
+    .cand:nth-child(3) .cand-ltr { font-size: 0.9rem; color: #607080; }
+
+    .cand-track {
+      flex: 1; height: 5px;
+      background: rgba(255,255,255,.08);
+      border-radius: 3px; overflow: hidden;
+    }
+    .cand-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width .15s ease-out;
+    }
+    .cand:nth-child(1) .cand-fill { background: var(--accent); }
+    .cand:nth-child(2) .cand-fill { background: #507080; }
+    .cand:nth-child(3) .cand-fill { background: #304050; }
+
+    .cand-pct {
+      font-size: 0.68rem;
+      color: var(--muted);
+      width: 30px; text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ── Detected-letter badge (bottom-left) ─────────────────────── */
     #badge {
-      position: absolute;
-      bottom: 18px;
-      left: 14px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 8px 18px 8px 14px;
-      background: rgba(0,0,0,0.68);
+      position: absolute; bottom: 16px; left: 12px;
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 16px 8px 12px;
+      background: rgba(0,0,0,.72);
       border: 1.5px solid var(--accent);
       border-radius: 14px;
-      backdrop-filter: blur(10px);
-      -webkit-backdrop-filter: blur(10px);
-      opacity: 0;
-      transform: translateY(6px);
-      transition: opacity 0.2s, transform 0.2s;
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      opacity: 0; transform: translateY(6px);
+      transition: opacity .2s, transform .2s, border-color .3s;
     }
     #badge.visible { opacity: 1; transform: translateY(0); }
+    #badge.locked  { border-color: var(--green); }
 
-    #badge-letter {
-      font-size: 2.8rem;
-      font-weight: 900;
-      color: var(--accent);
-      line-height: 1;
-      transition: color 0.25s;
+    #badge-ltr {
+      font-size: 3rem; font-weight: 900;
+      color: var(--accent); line-height: 1;
+      transition: color .25s;
     }
-    #badge-letter.confirmed { color: var(--green); }
+    #badge.locked #badge-ltr { color: var(--green); }
 
-    #badge-right { display: flex; flex-direction: column; gap: 4px; }
-    #badge-conf  { font-size: 0.8rem; color: #aaa; }
-    #badge-hint  { font-size: 0.68rem; color: var(--muted); }
+    #badge-meta { display: flex; flex-direction: column; gap: 3px; }
+    #badge-pct  { font-size: 0.88rem; font-weight: 700; color: var(--text); }
+    #badge-hint {
+      font-size: 0.62rem; color: var(--muted);
+      letter-spacing: 0.05em; text-transform: uppercase;
+    }
 
-    /* Hold-progress bar at bottom edge of camera */
+    /* ── Hold-progress bar ───────────────────────────────────────── */
     #hold-track {
-      position: absolute;
-      bottom: 0; left: 0; right: 0;
-      height: 5px;
-      background: rgba(255,255,255,0.08);
+      position: absolute; bottom: 0; left: 0; right: 0;
+      height: 6px; background: rgba(255,255,255,.06);
     }
     #hold-fill {
-      height: 100%;
-      width: 0%;
-      background: linear-gradient(90deg, var(--accent), var(--green));
+      height: 100%; width: 0%;
       border-radius: 0 3px 3px 0;
-      transition: width 0.05s linear;
+      transition: width .05s linear, background .3s;
+    }
+    #hold-fill.ready { background: linear-gradient(90deg, var(--accent), var(--green)); }
+    #hold-fill.low   { background: var(--muted); }
+
+    /* Threshold marker line on hold track */
+    #hold-track::after {
+      content: ''; position: absolute;
+      left: 85%; top: 0; bottom: 0; width: 2px;
+      background: rgba(255,255,255,.22);
     }
 
-    /* ── Text panel ────────────────────────────── */
+    /* ── Flash animation on letter confirm ───────────────────────── */
+    #flash {
+      position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      pointer-events: none;
+      font-size: 9rem; font-weight: 900;
+      color: var(--green);
+      text-shadow: 0 0 60px var(--green), 0 0 20px #fff;
+      opacity: 0;
+    }
+    @keyframes letterFlash {
+      0%   { opacity: 1; transform: scale(1.3); }
+      60%  { opacity: 0.9; transform: scale(1); }
+      100% { opacity: 0; transform: scale(0.8); }
+    }
+    #flash.pop { animation: letterFlash 0.55s ease-out forwards; }
+
+    /* ── Text / translation panel ────────────────────────────────── */
     #text-panel {
-      flex: 1;
-      min-height: 0;
+      flex: 1; min-height: 0;
       background: var(--panel);
       border-top: 1px solid var(--border);
-      display: flex;
-      flex-direction: column;
-      padding: 16px 20px 20px;
-      gap: 14px;
+      display: flex; flex-direction: column;
+      padding: 14px 18px 18px;
+      gap: 12px;
     }
 
     #panel-label {
-      font-size: 0.65rem;
-      font-weight: 700;
-      letter-spacing: 0.15em;
-      color: var(--muted);
+      font-size: 0.62rem; font-weight: 700;
+      letter-spacing: 0.14em; color: var(--muted);
       text-transform: uppercase;
     }
 
-    /* The big output text — the "second screen" for the employee */
+    /* Big output text — the "second screen" */
     #output {
-      flex: 1;
-      min-height: 0;
+      flex: 1; min-height: 0;
       overflow: hidden;
-      display: flex;
-      align-items: center;
-      /* clamp: min 2rem, fluid, max 5rem */
-      font-size: clamp(2rem, 9.5vw, 5rem);
+      font-size: clamp(2rem, 9vw, 5rem);
       font-weight: 800;
       letter-spacing: 0.14em;
       color: var(--text);
       word-break: break-all;
       line-height: 1.15;
-      /* wrap at bottom if multi-line */
-      align-items: flex-start;
-      padding-top: 4px;
     }
     #output.empty {
-      font-size: 1.1rem;
-      font-weight: 400;
-      letter-spacing: 0.04em;
-      color: var(--muted);
-      align-items: center;
+      font-size: 1.05rem; font-weight: 400;
+      letter-spacing: 0.04em; color: var(--muted);
+      display: flex; align-items: center;
     }
 
-    /* Flashing newly added letter  */
-    @keyframes letterPop {
-      0%   { color: var(--green); }
-      100% { color: var(--text);  }
-    }
-    .pop { animation: letterPop 0.5s ease-out forwards; }
-
-    /* ── Bottom controls ───────────────────────── */
+    /* ── Controls row ────────────────────────────────────────────── */
     #controls {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
+      display: flex; align-items: center;
+      justify-content: space-between; gap: 12px;
       flex-shrink: 0;
     }
 
     #clear-btn {
-      padding: 14px 32px;
-      background: var(--btn);
-      color: var(--text);
-      border: none;
-      border-radius: 14px;
-      font-size: 1rem;
-      font-weight: 700;
+      padding: 13px 30px;
+      background: var(--btn); color: var(--text);
+      border: none; border-radius: 13px;
+      font-size: 0.95rem; font-weight: 700;
       letter-spacing: 0.1em;
-      cursor: pointer;
-      touch-action: manipulation;
-      transition: background 0.15s, transform 0.1s;
-      user-select: none;
+      cursor: pointer; touch-action: manipulation;
+      transition: background .15s, transform .1s;
     }
-    #clear-btn:active { background: var(--btn-hover); transform: scale(0.97); }
+    #clear-btn:active { background: var(--btnhov); transform: scale(.97); }
 
-    #char-count { font-size: 0.82rem; color: var(--muted); }
+    #char-count { font-size: 0.8rem; color: var(--muted); }
 
-    /* ── Camera-switch button ──────────────────── */
-    #cam-switch {
-      position: absolute;
-      top: 10px;
-      right: 12px;
-      background: rgba(0,0,0,0.55);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      color: var(--text);
-      font-size: 1.3rem;
-      padding: 7px 10px;
-      cursor: pointer;
-      touch-action: manipulation;
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
-    }
-
-    /* ── Landscape: side-by-side ───────────────── */
+    /* ── Landscape: side-by-side ─────────────────────────────────── */
     @media (orientation: landscape) and (min-aspect-ratio: 13/9) {
-      #app      { flex-direction: row; }
+      #app       { flex-direction: row; }
       #cam-panel { flex: 1; height: 100%; }
       #text-panel {
-        width: 44%;
-        height: 100%;
+        width: 43%; height: 100%;
         flex-shrink: 0;
         border-top: none;
         border-left: 1px solid var(--border);
       }
     }
 
-    /* ── Loading overlay ───────────────────────── */
+    /* ── Loading overlay ─────────────────────────────────────────── */
     #loader {
-      position: fixed;
-      inset: 0;
+      position: fixed; inset: 0;
       background: var(--bg);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 20px;
-      z-index: 10;
-      transition: opacity 0.4s;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 18px; z-index: 10;
+      transition: opacity .4s;
     }
     #loader.hidden { opacity: 0; pointer-events: none; }
-
-    #loader-title  { font-size: 1.4rem; font-weight: 700; color: var(--accent); }
-    #loader-status { font-size: 0.9rem; color: var(--muted); }
+    #loader-title  { font-size: 1.3rem; font-weight: 700; color: var(--accent); }
+    #loader-status { font-size: 0.85rem; color: var(--muted); }
 
     .spinner {
-      width: 40px; height: 40px;
+      width: 38px; height: 38px;
       border: 3px solid var(--border);
       border-top-color: var(--accent);
       border-radius: 50%;
-      animation: spin 0.8s linear infinite;
+      animation: spin .8s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
 
-<!-- ── Loading screen ─────────────────────────── -->
+<!-- Loading screen -->
 <div id="loader">
   <div class="spinner"></div>
   <div id="loader-title">ASL Translator</div>
   <div id="loader-status">Starting camera…</div>
 </div>
 
-<!-- ── Main app ───────────────────────────────── -->
+<!-- App -->
 <div id="app">
 
-  <!-- Camera panel -->
   <div id="cam-panel">
     <video id="video" autoplay playsinline muted></video>
     <canvas id="skeleton-canvas"></canvas>
@@ -290,20 +313,42 @@
     <div id="status" class="loading">Loading…</div>
     <button id="cam-switch" title="Switch camera">⇄</button>
 
+    <!-- Top-3 candidates overlay -->
+    <div id="top3">
+      <div class="cand" id="cand0">
+        <span class="cand-ltr">—</span>
+        <div class="cand-track"><div class="cand-fill" style="width:0%"></div></div>
+        <span class="cand-pct">—</span>
+      </div>
+      <div class="cand" id="cand1">
+        <span class="cand-ltr">—</span>
+        <div class="cand-track"><div class="cand-fill" style="width:0%"></div></div>
+        <span class="cand-pct">—</span>
+      </div>
+      <div class="cand" id="cand2">
+        <span class="cand-ltr">—</span>
+        <div class="cand-track"><div class="cand-fill" style="width:0%"></div></div>
+        <span class="cand-pct">—</span>
+      </div>
+    </div>
+
+    <!-- Confirmed-letter badge -->
     <div id="badge">
-      <span id="badge-letter">A</span>
-      <div id="badge-right">
-        <span id="badge-conf">—</span>
+      <span id="badge-ltr">A</span>
+      <div id="badge-meta">
+        <span id="badge-pct">0%</span>
         <span id="badge-hint">Hold to confirm</span>
       </div>
     </div>
 
-    <div id="hold-track">
-      <div id="hold-fill"></div>
-    </div>
+    <!-- Flash overlay for confirmed letter -->
+    <div id="flash"></div>
+
+    <!-- Hold-progress bar at bottom of camera -->
+    <div id="hold-track"><div id="hold-fill"></div></div>
   </div>
 
-  <!-- Text / translation panel -->
+  <!-- Text panel -->
   <div id="text-panel">
     <div id="panel-label">Translated text</div>
     <div id="output" class="empty">Show a hand sign…</div>
@@ -316,221 +361,491 @@
 </div>
 
 <script type="module">
-// ─────────────────────────────────────────────────────────────────────────────
-//  Imports — MediaPipe Tasks Vision (hand landmarks) via CDN
-// ─────────────────────────────────────────────────────────────────────────────
 import { HandLandmarker, FilesetResolver }
   from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/+esm";
 
-// ── Config ────────────────────────────────────────────────────────────────────
-const WASM_CDN    = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
-const MODEL_URL   = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
-const CONF_MIN    = 0.68;   // minimum classifier confidence to show a letter
-const HOLD_MS     = 800;    // ms to hold a sign before confirming it
+// ═══════════════════════════════════════════════════════════════════════════
+//  CONSTANTS
+// ═══════════════════════════════════════════════════════════════════════════
+const WASM_CDN   = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
+const MODEL_URL  = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
+const CONF_MIN   = 0.85;   // confidence threshold to fill hold bar
+const HOLD_MS    = 1200;   // ms to hold a sign before confirming
+const BUF_SIZE   = 15;     // frames for majority voting
+const VOTE_REQ   = 0.55;   // fraction of frames that must agree
 
-// Hand skeleton connections (21 landmarks)
 const CONNECTIONS = [
-  [0,1],[1,2],[2,3],[3,4],          // Thumb
-  [0,5],[5,6],[6,7],[7,8],          // Index
-  [0,9],[9,10],[10,11],[11,12],     // Middle
-  [0,13],[13,14],[14,15],[15,16],   // Ring
-  [0,17],[17,18],[18,19],[19,20],   // Pinky
-  [5,9],[9,13],[13,17],             // Palm
+  [0,1],[1,2],[2,3],[3,4],
+  [0,5],[5,6],[6,7],[7,8],
+  [0,9],[9,10],[10,11],[11,12],
+  [0,13],[13,14],[14,15],[15,16],
+  [0,17],[17,18],[18,19],[19,20],
+  [5,9],[9,13],[13,17],
 ];
 
-// ── DOM refs ──────────────────────────────────────────────────────────────────
-const loader       = document.getElementById("loader");
-const loaderStatus = document.getElementById("loader-status");
-const video        = document.getElementById("video");
-const canvas       = document.getElementById("skeleton-canvas");
-const ctx          = canvas.getContext("2d");
-const statusEl     = document.getElementById("status");
-const badge        = document.getElementById("badge");
-const badgeLetter  = document.getElementById("badge-letter");
-const badgeConf    = document.getElementById("badge-conf");
-const holdFill     = document.getElementById("hold-fill");
-const outputEl     = document.getElementById("output");
-const charCount    = document.getElementById("char-count");
-const clearBtn     = document.getElementById("clear-btn");
-const camSwitch    = document.getElementById("cam-switch");
+// ═══════════════════════════════════════════════════════════════════════════
+//  3-D MATH HELPERS
+// ═══════════════════════════════════════════════════════════════════════════
+const z  = l => l.z || 0;
+const v3 = (a, b) => ({ x: a.x-b.x, y: a.y-b.y, z: z(a)-z(b) });
+const dot3 = (u, v) => u.x*v.x + u.y*v.y + u.z*v.z;
+const len3 = v => Math.sqrt(v.x**2 + v.y**2 + v.z**2);
+const dist3 = (a, b) => len3(v3(a, b));
 
-// ── State ─────────────────────────────────────────────────────────────────────
-let translated  = "";
-let curLetter   = "";
-let holdStart   = null;
-let lastConfirm = 0;
-let facingMode  = "user";
-let detector    = null;
-let stream      = null;
-let lastTime    = -1;
-let running     = false;
-
-// ── Geometry helpers ──────────────────────────────────────────────────────────
-const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
-
-function thumbExtended(lm, hs) {
-  // Thumb is out when its tip is far from the index-finger MCP
-  return dist(lm[4], lm[5]) / hs > 0.46;
+/** Angle (radians) at joint B in the chain A-B-C, using dot-product. */
+function angle3D(A, B, C) {
+  const u = v3(A, B), w = v3(C, B);
+  const d = dot3(u, w), m = len3(u) * len3(w);
+  return m < 1e-9 ? Math.PI : Math.acos(Math.max(-1, Math.min(1, d / m)));
 }
 
-function fingerUp(lm, tipIdx, pipIdx) {
-  // A finger is "up" when the tip is above (smaller y) the PIP joint.
-  // Assumes hand is held upright; works for selfie-mode demos.
-  return lm[tipIdx].y < lm[pipIdx].y;
+/** Map a joint angle to a curl score: 0 = straight, 1 = fully curled. */
+function toCurl(ang) {
+  // straight ≈ π (180°), fully curled ≈ 0.22π (40°)
+  const HI = Math.PI * 0.88, LO = Math.PI * 0.22;
+  return 1 - Math.max(0, Math.min(1, (ang - LO) / (HI - LO)));
 }
 
-// ── ASL Classifier ─────────────────────────────────────────────────────────────
-// Classifies 21 MediaPipe hand landmarks → [letter, confidence 0‑1].
-// Uses geometric rules derived from the standard ASL static alphabet.
-// Letters J and Z require motion and are not detectable from a single frame.
-// ──────────────────────────────────────────────────────────────────────────────
-function classifyASL(lm) {
-  const hs = dist(lm[0], lm[9]) || 0.001;  // hand size (wrist → middle MCP)
+/** Average curl for a 4-joint finger segment (using PIP and DIP angles). */
+function fingerCurl(lm, mcp, pip, dip, tip) {
+  return (toCurl(angle3D(lm[mcp], lm[pip], lm[dip])) +
+          toCurl(angle3D(lm[pip], lm[dip], lm[tip]))) / 2;
+}
 
-  // Binary finger states
-  const T = thumbExtended(lm, hs);
-  const I = fingerUp(lm, 8, 6);
-  const M = fingerUp(lm, 12, 10);
-  const R = fingerUp(lm, 16, 14);
-  const P = fingerUp(lm, 20, 18);
+/** Curl for the thumb (only two main segments). */
+function thumbCurl(lm) {
+  return (toCurl(angle3D(lm[1], lm[2], lm[3])) +
+          toCurl(angle3D(lm[2], lm[3], lm[4]))) / 2;
+}
 
-  // Key distances (normalised to hand size)
-  const tI  = dist(lm[4], lm[8])  / hs;   // thumb tip ↔ index tip
-  const iM  = dist(lm[8], lm[12]) / hs;   // index tip ↔ middle tip (spread)
-  const mR  = dist(lm[12],lm[16]) / hs;   // middle ↔ ring spread
-  const tPm = dist(lm[4], lm[9])  / hs;   // thumb ↔ palm centre
+// ═══════════════════════════════════════════════════════════════════════════
+//  HAND FEATURE EXTRACTION
+// ═══════════════════════════════════════════════════════════════════════════
+/**
+ * Extract a rich feature object from 21 MediaPipe hand landmarks.
+ * Coordinates: x,y normalised to [0,1]; z in same scale, negative = toward cam.
+ */
+function analyzeHand(lm) {
+  const hs = dist3(lm[0], lm[9]) || 0.001;  // hand size: wrist → middle MCP
 
-  // Index direction: is it pointing mostly sideways?
+  // ── Per-finger curl scores (0=open, 1=closed) ──────────────────────
+  const curl = [
+    thumbCurl(lm),
+    fingerCurl(lm, 5,  6,  7,  8),
+    fingerCurl(lm, 9,  10, 11, 12),
+    fingerCurl(lm, 13, 14, 15, 16),
+    fingerCurl(lm, 17, 18, 19, 20),
+  ];
+
+  // ── Binary up/down (fast y-coord check) ───────────────────────────
+  // A finger is "up" when its tip clears the PIP joint vertically.
+  const up = [
+    dist3(lm[4], lm[0]) > hs * 0.72 && lm[4].y < lm[3].y,  // thumb
+    lm[8].y  < lm[6].y,
+    lm[12].y < lm[10].y,
+    lm[16].y < lm[14].y,
+    lm[20].y < lm[18].y,
+  ];
+  const [T, I, M, R, P] = up;
+
+  // ── Key distances (normalised to hand size) ────────────────────────
+  const tI  = dist3(lm[4], lm[8])  / hs;   // thumb tip ↔ index tip
+  const iM  = dist3(lm[8], lm[12]) / hs;   // index tip ↔ middle tip
+  const mR  = dist3(lm[12],lm[16]) / hs;
+  const rP  = dist3(lm[16],lm[20]) / hs;
+  const tP  = dist3(lm[4], lm[9])  / hs;   // thumb ↔ palm centre (MCP9)
+
+  // ── Palm centre (average of 4 finger MCPs) ─────────────────────────
+  const palmCX = (lm[5].x+lm[9].x+lm[13].x+lm[17].x) / 4;
+  const palmCY = (lm[5].y+lm[9].y+lm[13].y+lm[17].y) / 4;
+  const palmCZ = (z(lm[5])+z(lm[9])+z(lm[13])+z(lm[17])) / 4;
+
+  // ── Thumb special positions ────────────────────────────────────────
+  // thumbOutside: tip is laterally beyond the hand boundary (letter A)
+  const palmHalfW = Math.abs(lm[5].x - lm[17].x) * 0.5 + 0.01;
+  const thumbOutside = Math.abs(lm[4].x - palmCX) > palmHalfW * 1.05;
+
+  // thumbOverFist: thumb tip is closer to camera than avg fingertip (letter S)
+  const tipAvgZ = (z(lm[8])+z(lm[12])+z(lm[16])+z(lm[20])) / 4;
+  const thumbOverFist = z(lm[4]) < tipAvgZ - 0.01 && !thumbOutside;
+
+  // thumbBetweenIM: thumb x is inside the index↔middle MCP gap (letter T)
+  const xLo = Math.min(lm[5].x, lm[9].x), xHi = Math.max(lm[5].x, lm[9].x);
+  const thumbBetweenIM = lm[4].x > xLo - 0.01 && lm[4].x < xHi + 0.01
+                       && lm[4].y > lm[5].y - 0.04;
+
+  // ── Fingers-over-thumb depth (for M / N) ──────────────────────────
+  // A finger is "over thumb" when its DIP z < thumb IP z (closer to camera)
+  const thumbIPZ = z(lm[3]);
+  const fingerOverThumb = [
+    z(lm[7])  < thumbIPZ - 0.008,   // index DIP over thumb
+    z(lm[11]) < thumbIPZ - 0.008,   // middle DIP over thumb
+    z(lm[15]) < thumbIPZ - 0.008,   // ring DIP over thumb
+  ];
+
+  // ── Index finger direction ─────────────────────────────────────────
   const idx_dx = Math.abs(lm[8].x - lm[5].x);
   const idx_dy = Math.abs(lm[8].y - lm[5].y);
-  const idxSide = idx_dx > idx_dy * 0.75;
+  const idxSideways = idx_dx > idx_dy * 0.65;
+  const idxDown     = lm[8].y > lm[5].y + 0.04;  // tip below MCP → pointing down
+  const idxHooked   = lm[8].y > lm[7].y;          // tip below DIP → X shape
 
-  // Index hooked (tip BELOW its DIP joint → X shape)
-  const idxHook = lm[8].y > lm[7].y;
+  // ── Two-finger spread / crossing ──────────────────────────────────
+  // R vs U: fingers crossed (tips very close) vs parallel (moderate gap)
+  const iMcrossed = I && M && iM < 0.14;
 
-  // ── All fingers closed ────────────────────────────────────────────────────
-  if (!T && !I && !M && !R && !P) {
-    // Discriminate A / E / S / M / N / T by thumb and fingertip geometry
-    const tipAvgY  = (lm[8].y + lm[12].y + lm[16].y + lm[20].y) / 4;
-    const mcpAvgY  = (lm[5].y + lm[9].y  + lm[13].y + lm[17].y) / 4;
-    const tipsNearMCP = tipAvgY > mcpAvgY - 0.04;   // bent at knuckle, not tucked
+  // ── Palm normal z (sign indicates facing direction) ────────────────
+  // cross(wrist→midMCP, indexMCP→ringMCP).z — negative ≈ palm faces camera
+  const v1 = v3(lm[9], lm[0]), v2 = v3(lm[13], lm[5]);
+  const palmNormZ = v1.x * v2.y - v1.y * v2.x;
+  const palmFwd = palmNormZ < 0;
 
-    if (tipsNearMCP)             return ["E", 0.73];  // fingers bent at knuckle level
-    if (tPm < hs * 0.55 && lm[4].y < lm[6].y)
-                                 return ["S", 0.76];  // thumb across knuckles
-    if (tPm < hs * 0.52)        return ["T", 0.70];  // thumb between index & middle
-    return                              ["A", 0.80];  // fist, thumb at side
-  }
-
-  // ── Only pinky up ─────────────────────────────────────────────────────────
-  if (!T && !I && !M && !R && P)  return ["I", 0.90];
-
-  // ── Only index up ─────────────────────────────────────────────────────────
-  if (!T && I && !M && !R && !P) {
-    if (idxHook)  return ["X", 0.82];
-    if (idxSide)  return ["G", 0.78];
-    return               ["D", 0.83];
-  }
-
-  // ── Thumb + pinky (Y) ─────────────────────────────────────────────────────
-  if (T && !I && !M && !R && P)   return ["Y", 0.91];
-
-  // ── Thumb + index only (L) ────────────────────────────────────────────────
-  if (T && I && !M && !R && !P)   return ["L", 0.90];
-
-  // ── Thumb only + curved fingers → C or O ─────────────────────────────────
-  if (T && !I && !M && !R && !P) {
-    return tI < 0.50 ? ["O", 0.75] : ["C", 0.72];
-  }
-
-  // ── C shape without thumb detected ───────────────────────────────────────
-  // All fingers partially curved (none fully up, checked via tip-MCP relation)
-  {
-    const iCurved  = !I && lm[8].y  < lm[5].y  + 0.02;   // index slightly raised
-    const mCurved  = !M && lm[12].y < lm[9].y  + 0.02;
-    const rCurved  = !R && lm[16].y < lm[13].y + 0.02;
-    const pCurved  = !P && lm[20].y < lm[17].y + 0.02;
-    if (iCurved && mCurved && rCurved && pCurved) {
-      return tI < 0.45 ? ["O", 0.72] : ["C", 0.70];
-    }
-  }
-
-  // ── Two fingers: index + middle ───────────────────────────────────────────
-  if (!T && I && M && !R && !P) {
-    if (idxSide)          return ["H", 0.79];
-    if (iM > 0.42)        return ["V", 0.86];   // peace sign — spread
-    const crossed = dist(lm[8], lm[12]) / hs < 0.16;
-    return crossed       ? ["R", 0.74] : ["U", 0.83];
-  }
-
-  // ── Three fingers: index + middle + ring ──────────────────────────────────
-  if (!T && I && M && R && !P)  return ["W", 0.86];
-
-  // ── Three fingers: middle + ring + pinky (+ thumb touching index → F) ────
-  if (!T && !I && M && R && P)  return ["F", tI < 0.38 ? 0.82 : 0.72];
-
-  // ── Four fingers up — B ───────────────────────────────────────────────────
-  if (!T && I && M && R && P)   return ["B", 0.92];
-
-  // ── Thumb + index + middle — K ────────────────────────────────────────────
-  if (T && I && M && !R && !P)  return ["K", 0.83];
-
-  // ── Open hand (all five) ──────────────────────────────────────────────────
-  if (T && I && M && R && P)    return ["5", 0.70];  // not an ASL letter
-
-  return ["?", 0.0];
+  return {
+    curl, up, T, I, M, R, P,
+    tI, iM, mR, rP, tP,
+    thumbOutside, thumbOverFist, thumbBetweenIM,
+    fingerOverThumb, idxSideways, idxDown, idxHooked, iMcrossed,
+    palmFwd, hs,
+  };
 }
 
-// ── Draw hand skeleton ────────────────────────────────────────────────────────
-function drawSkeleton(landmarks) {
-  const w = canvas.width, h = canvas.height;
+// ═══════════════════════════════════════════════════════════════════════════
+//  LETTER SCORERS  — each returns a confidence value 0 → 1
+//  Hard-zero if an impossible feature is present.
+//  Letters J and Z require motion; not included.
+// ═══════════════════════════════════════════════════════════════════════════
+const ac = (f, ...idx) => idx.reduce((s, i) => s + f.curl[i], 0) / idx.length;
+
+const SCORERS = {
+
+// ── Closed-fist group (A / E / M / N / S / T) ─────────────────────────────
+'A': f => {
+  if (f.I || f.M || f.R || f.P) return 0;
+  const fc = ac(f, 1, 2, 3, 4);
+  if (fc < 0.52) return 0;                  // too open → E
+  if (f.thumbOverFist) return 0.05;         // S
+  if (f.thumbBetweenIM) return 0.05;        // T
+  return fc * 0.55 + (f.thumbOutside ? 0.45 : 0.25);
+},
+
+'E': f => {
+  if (f.I || f.M || f.R || f.P) return 0;
+  const fc = ac(f, 1, 2, 3, 4);
+  // E: fingers bent at knuckle level — moderate curl 0.30–0.56
+  if (fc < 0.26 || fc > 0.62) return 0;
+  return Math.max(0, 1 - Math.abs(fc - 0.44) * 4.5);
+},
+
+'M': f => {
+  if (f.I || f.M || f.R || f.P) return 0;
+  const fc = ac(f, 1, 2, 3, 4);
+  if (fc < 0.52) return 0;
+  const [io, mo, ro] = f.fingerOverThumb;
+  if (io && mo && ro) return 0.88;
+  if (io && mo)       return 0.58;
+  return 0.18;
+},
+
+'N': f => {
+  if (f.I || f.M || f.R || f.P) return 0;
+  const fc = ac(f, 1, 2, 3, 4);
+  if (fc < 0.52) return 0;
+  const [io, mo, ro] = f.fingerOverThumb;
+  if (io && mo && !ro) return 0.87;
+  if (io && mo &&  ro) return 0.48;   // might be M
+  if (io)              return 0.35;
+  return 0.15;
+},
+
+'S': f => {
+  if (f.I || f.M || f.R || f.P) return 0;
+  const fc = ac(f, 1, 2, 3, 4);
+  if (fc < 0.52) return 0;
+  if (f.thumbOutside) return 0.1;      // A
+  return fc * 0.40 + (f.thumbOverFist ? 0.60 : 0.28);
+},
+
+'T': f => {
+  if (f.I || f.M || f.R || f.P) return 0;
+  const fc = ac(f, 1, 2, 3, 4);
+  if (fc < 0.48) return 0;
+  return (f.thumbBetweenIM ? 0.82 : 0.18) * 0.65 + fc * 0.35;
+},
+
+// ── All-four-up ────────────────────────────────────────────────────────────
+'B': f => {
+  if (!f.I || !f.M || !f.R || !f.P) return 0;
+  const str = 1 - ac(f, 1, 2, 3, 4);
+  return 0.75 + str * 0.25;
+},
+
+// ── Curved shapes ──────────────────────────────────────────────────────────
+'C': f => {
+  if (f.I || f.M || f.R || f.P) return 0;
+  const fc = ac(f, 1, 2, 3, 4);
+  if (fc < 0.20 || fc > 0.62) return 0;
+  if (f.tI < 0.26) return 0;            // too closed → O
+  return Math.max(0, 1 - Math.abs(fc - 0.40) * 3.5);
+},
+
+'O': f => {
+  if (f.I || f.M || f.R || f.P) return 0;
+  const fc = ac(f, 0, 1, 2, 3, 4);
+  if (fc < 0.22) return 0;
+  const closeScore = f.tI < 0.30 ? 0.90 : f.tI < 0.50 ? 0.60 : 0.20;
+  return closeScore * 0.70 + Math.min(1, fc) * 0.30;
+},
+
+// ── Single-index group ─────────────────────────────────────────────────────
+'D': f => {
+  if (!f.I || f.M || f.R || f.P) return 0;
+  if (f.idxSideways) return 0;
+  const others = ac(f, 2, 3, 4);
+  return 0.40 + others * 0.40 + (f.tI < 0.60 ? 0.20 : 0.05);
+},
+
+'G': f => {
+  if (f.M || f.R || f.P) return 0;
+  if (!f.idxSideways || f.idxDown) return 0;
+  const others = ac(f, 2, 3, 4);
+  return 0.50 + others * 0.42;
+},
+
+'X': f => {
+  if (f.M || f.R || f.P) return 0;
+  if (!f.idxHooked) return 0;
+  return 0.84;
+},
+
+// ── Two-finger sideways ────────────────────────────────────────────────────
+'H': f => {
+  if (f.R || f.P || f.T) return 0;
+  if (!f.idxSideways) return 0;
+  const bothOut = (f.curl[1] < 0.45 && f.curl[2] < 0.45) ? 0.85 : 0.45;
+  return bothOut;
+},
+
+// ── Two-finger upright (R / U / V) ────────────────────────────────────────
+'R': f => {
+  if (!f.I || !f.M || f.R || f.P || f.T) return 0;
+  if (f.idxSideways) return 0;
+  if (!f.iMcrossed) return 0.12;
+  return 0.85;
+},
+
+'U': f => {
+  if (!f.I || !f.M || f.R || f.P) return 0;
+  if (f.idxSideways) return 0;
+  if (f.iMcrossed) return 0.1;          // R
+  // Together (not spread)
+  const tog = f.iM < 0.28 ? 0.90 : f.iM < 0.40 ? 0.65 : 0.20;
+  return tog * 0.85 + 0.10;
+},
+
+'V': f => {
+  if (!f.I || !f.M || f.R || f.P) return 0;
+  if (f.idxSideways || f.iMcrossed) return 0;
+  const spr = f.iM > 0.42 ? 0.92 : f.iM > 0.30 ? 0.68 : 0.18;
+  return spr * 0.90 + 0.05;
+},
+
+// ── Three-finger group ─────────────────────────────────────────────────────
+'K': f => {
+  if (!f.I || !f.M || f.R || f.P) return 0;
+  if (!f.T) return 0.28;
+  const str = 1 - ac(f, 1, 2);
+  return 0.55 + str * 0.35 + (f.iM > 0.22 ? 0.10 : 0);
+},
+
+'W': f => {
+  if (!f.I || !f.M || !f.R || f.P) return 0;
+  const spr = (f.iM > 0.22 && f.mR > 0.18) ? 0.88 : 0.55;
+  return spr;
+},
+
+// ── Three-finger (non-index) — F ───────────────────────────────────────────
+'F': f => {
+  if (f.I || !f.M || !f.R || !f.P) return 0;
+  const touchScore = f.tI < 0.36 ? 0.90 : f.tI < 0.50 ? 0.65 : 0.30;
+  const str = 1 - ac(f, 2, 3, 4);
+  return touchScore * 0.65 + str * 0.35;
+},
+
+// ── L shape ────────────────────────────────────────────────────────────────
+'L': f => {
+  if (!f.T || !f.I || f.M || f.R || f.P) return 0;
+  const str = (1-f.curl[0]) * 0.5 + (1-f.curl[1]) * 0.5;
+  return 0.60 + str * 0.40;
+},
+
+// ── Pinky group ────────────────────────────────────────────────────────────
+'I': f => {
+  if (f.I || f.M || f.R || f.T) return 0;
+  if (!f.P) return 0;
+  return 0.55 + (1 - f.curl[4]) * 0.45;
+},
+
+'Y': f => {
+  if (f.I || f.M || f.R) return 0;
+  if (!f.T || !f.P) return 0;
+  return 0.92;
+},
+
+// ── Pointing-down group ────────────────────────────────────────────────────
+'P': f => {
+  // Like K but index + middle point downward
+  if (!f.I || !f.M || f.R || f.P) return 0;
+  if (!f.idxDown) return 0;
+  return 0.78 + (f.T ? 0.12 : 0);
+},
+
+'Q': f => {
+  // Like G but index points downward
+  if (f.M || f.R || f.P) return 0;
+  if (!f.idxDown) return 0;
+  return 0.76 + (f.T ? 0.10 : 0);
+},
+
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  CLASSIFY — returns sorted array of [letter, score 0-1]
+// ─────────────────────────────────────────────────────────────────────────────
+function classifyASL(lm) {
+  const f = analyzeHand(lm);
+  return Object.entries(SCORERS)
+    .map(([l, fn]) => [l, Math.max(0, Math.min(1, fn(f)))])
+    .sort((a, b) => b[1] - a[1]);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  FRAME HISTORY  — majority vote over last BUF_SIZE frames
+// ═══════════════════════════════════════════════════════════════════════════
+const history = [];   // [{letter, score}]
+
+function pushHistory(letter, score) {
+  history.push({ letter, score });
+  if (history.length > BUF_SIZE) history.shift();
+}
+
+/**
+ * Returns { letter, conf } if one letter wins the vote with confidence,
+ * otherwise null.
+ */
+function getVoted() {
+  if (history.length < 6) return null;
+  const cnt = {}, wsum = {};
+  for (const { letter, score } of history) {
+    if (score < 0.45) continue;
+    cnt[letter]  = (cnt[letter]  || 0) + 1;
+    wsum[letter] = (wsum[letter] || 0) + score;
+  }
+  let best = null, bestW = 0;
+  for (const l of Object.keys(cnt)) {
+    const freq = cnt[l] / history.length;
+    const avg  = wsum[l] / cnt[l];
+    const w    = freq * avg;
+    if (freq >= VOTE_REQ && w > bestW) { bestW = w; best = l; }
+  }
+  if (!best) return null;
+  return { letter: best, conf: wsum[best] / cnt[best] };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  SKELETON DRAWING
+// ═══════════════════════════════════════════════════════════════════════════
+const FINGER_COLORS = [
+  "#ff6b88","#ffb830","#00d4ff","#a78bfa","#00e87a",  // thumb→pinky
+];
+// Which color each landmark index uses
+const LM_COLOR = Array.from({length: 21}, (_, i) => {
+  if (i === 0) return "#ccc";
+  const fi = i <= 4 ? 0 : Math.floor((i - 5) / 4) + 1;
+  return FINGER_COLORS[Math.min(fi, 4)];
+});
+
+function drawSkeleton(lm, w, h) {
+  const canvas = document.getElementById("skeleton-canvas");
+  const ctx = canvas.getContext("2d");
   ctx.clearRect(0, 0, w, h);
 
-  // Landmark pixel coords (canvas is CSS-flipped to match mirrored video)
-  const pts = landmarks.map(l => ({ x: l.x * w, y: l.y * h }));
+  const pts = lm.map(l => ({ x: l.x * w, y: l.y * h }));
 
   // Connections
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = "rgba(0, 212, 255, 0.55)";
   CONNECTIONS.forEach(([a, b]) => {
     ctx.beginPath();
     ctx.moveTo(pts[a].x, pts[a].y);
     ctx.lineTo(pts[b].x, pts[b].y);
+    ctx.strokeStyle = "rgba(255,255,255,0.22)";
+    ctx.lineWidth = 2.5;
     ctx.stroke();
   });
 
   // Joints
   pts.forEach((p, i) => {
-    const tip = [4, 8, 12, 16, 20].includes(i);
+    const tip = [4,8,12,16,20].includes(i);
     ctx.beginPath();
-    ctx.arc(p.x, p.y, tip ? 7 : 4, 0, Math.PI * 2);
-    ctx.fillStyle = tip ? "#00d4ff" : "#008fb0";
+    ctx.arc(p.x, p.y, tip ? 7 : 4.5, 0, Math.PI * 2);
+    ctx.fillStyle = LM_COLOR[i];
     ctx.fill();
     if (tip) {
-      ctx.strokeStyle = "rgba(255,255,255,0.35)";
+      ctx.strokeStyle = "rgba(255,255,255,0.45)";
       ctx.lineWidth = 1.5;
       ctx.stroke();
     }
   });
 }
 
-// ── Update translated-text display ───────────────────────────────────────────
-function updateOutput() {
-  charCount.textContent = `${translated.length} char${translated.length !== 1 ? "s" : ""}`;
-  if (!translated) {
-    outputEl.className = "empty";
-    outputEl.textContent = "Show a hand sign…";
-    return;
-  }
-  outputEl.className = "";
-  // Show last ~36 chars split in lines of 12 for readability at distance
-  const view = translated.slice(-36);
-  outputEl.textContent = view;
+// ═══════════════════════════════════════════════════════════════════════════
+//  UI UPDATE HELPERS
+// ═══════════════════════════════════════════════════════════════════════════
+const candEls = [0,1,2].map(i => document.getElementById(`cand${i}`));
+
+function updateTop3(results) {
+  const top = results.slice(0, 3);
+  const maxScore = top[0]?.[1] || 0;
+
+  candEls.forEach((el, i) => {
+    const [letter, score] = top[i] || ["—", 0];
+    el.querySelector(".cand-ltr").textContent = letter;
+    const pct = maxScore > 0 ? Math.round(score / maxScore * 100) : 0;
+    el.querySelector(".cand-fill").style.width = `${pct}%`;
+    el.querySelector(".cand-pct").textContent = score > 0.05 ? `${Math.round(score * 100)}%` : "—";
+    el.classList.toggle("active", score > 0.10);
+  });
 }
 
-// ── Camera setup ──────────────────────────────────────────────────────────────
+const outputEl  = document.getElementById("output");
+const charCount = document.getElementById("char-count");
+
+function updateOutput(text) {
+  charCount.textContent = `${text.length} char${text.length !== 1 ? "s" : ""}`;
+  if (!text) {
+    outputEl.className = "empty";
+    outputEl.textContent = "Show a hand sign…";
+  } else {
+    outputEl.className = "";
+    outputEl.textContent = text.slice(-40);  // show last 40 chars
+  }
+}
+
+function flashConfirmed(letter) {
+  const el = document.getElementById("flash");
+  el.textContent = letter;
+  el.classList.remove("pop");
+  void el.offsetWidth;  // reflow to restart animation
+  el.classList.add("pop");
+  setTimeout(() => el.classList.remove("pop"), 600);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  CAMERA
+// ═══════════════════════════════════════════════════════════════════════════
+let stream = null;
+
 async function startCamera(facing) {
   if (stream) stream.getTracks().forEach(t => t.stop());
+  const video = document.getElementById("video");
   stream = await navigator.mediaDevices.getUserMedia({
     video: { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 } },
     audio: false,
@@ -540,10 +855,14 @@ async function startCamera(facing) {
   await video.play();
 }
 
-// ── MediaPipe setup ───────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+//  MEDIAPIPE SETUP
+// ═══════════════════════════════════════════════════════════════════════════
+let detector = null;
+
 async function setupDetector() {
-  const fileset = await FilesetResolver.forVisionTasks(WASM_CDN);
-  detector = await HandLandmarker.createFromOptions(fileset, {
+  const fs = await FilesetResolver.forVisionTasks(WASM_CDN);
+  detector = await HandLandmarker.createFromOptions(fs, {
     baseOptions: { modelAssetPath: MODEL_URL, delegate: "GPU" },
     runningMode: "VIDEO",
     numHands: 1,
@@ -553,95 +872,135 @@ async function setupDetector() {
   });
 }
 
-// ── Main detection / render loop ──────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+//  DETECTION LOOP
+// ═══════════════════════════════════════════════════════════════════════════
+let translated   = "";
+let curLetter    = "";
+let holdStart    = null;
+let lastConfirm  = 0;
+let lastVidTime  = -1;
+let running      = false;
+let facingMode   = "user";
+
+const video     = document.getElementById("video");
+const canvas    = document.getElementById("skeleton-canvas");
+const statusEl  = document.getElementById("status");
+const badge     = document.getElementById("badge");
+const badgeLtr  = document.getElementById("badge-ltr");
+const badgePct  = document.getElementById("badge-pct");
+const badgeHint = document.getElementById("badge-hint");
+const holdFill  = document.getElementById("hold-fill");
+
 function loop() {
   if (!running) return;
   requestAnimationFrame(loop);
 
   if (video.readyState < 2) return;
-
-  // Keep canvas in sync with actual video resolution
   if (canvas.width  !== video.videoWidth)  canvas.width  = video.videoWidth;
   if (canvas.height !== video.videoHeight) canvas.height = video.videoHeight;
+  if (video.currentTime === lastVidTime) return;
+  lastVidTime = video.currentTime;
 
-  const now = performance.now();
-  if (video.currentTime === lastTime) return;
-  lastTime = video.currentTime;
+  const now     = performance.now();
+  const result  = detector.detectForVideo(video, now);
+  const lmList  = result?.landmarks;
 
-  const result = detector.detectForVideo(video, now);
-  const lmList = result.landmarks;
-
-  if (!lmList || lmList.length === 0) {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    statusEl.textContent = "Show hand…";
-    statusEl.className   = "waiting";
-    badge.classList.remove("visible");
-    curLetter = "";
-    holdStart = null;
+  // ── No hand ───────────────────────────────────────────────────────
+  if (!lmList?.length) {
+    canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
+    statusEl.textContent = "Show hand…"; statusEl.className = "waiting";
+    badge.classList.remove("visible", "locked");
     holdFill.style.width = "0%";
+    updateTop3([]);
+    curLetter = ""; holdStart = null;
     return;
   }
 
-  const lm = lmList[0];
-  drawSkeleton(lm);
-  statusEl.textContent = "Hand detected";
-  statusEl.className   = "detected";
+  // ── Hand found ────────────────────────────────────────────────────
+  const lm      = lmList[0];
+  drawSkeleton(lm, canvas.width, canvas.height);
+  statusEl.textContent = "Hand detected"; statusEl.className = "detected";
 
-  const [letter, conf] = classifyASL(lm);
-  const show = letter !== "?" && conf >= CONF_MIN;
+  const results = classifyASL(lm);
+  updateTop3(results);
 
-  if (show) {
+  // Push top-1 into history buffer
+  const [topLetter, topScore] = results[0] || ["?", 0];
+  pushHistory(topLetter, topScore);
+
+  // Majority vote over last 15 frames
+  const voted = getVoted();
+  const stableLetter = voted?.letter || topLetter;
+  const stableConf   = voted?.conf   || topScore;
+
+  // ── Update badge ──────────────────────────────────────────────────
+  if (stableConf > 0.40 && stableLetter !== "?") {
     badge.classList.add("visible");
-    badgeLetter.textContent = letter;
-    badgeConf.textContent   = `${Math.round(conf * 100)}%`;
+    badgeLtr.textContent = stableLetter;
+    badgePct.textContent = `${Math.round(stableConf * 100)}%`;
+    const aboveThresh = stableConf >= CONF_MIN;
+    badge.classList.toggle("locked", aboveThresh);
+    badgeHint.textContent = aboveThresh ? "Hold steady…" : `Need ${Math.round(CONF_MIN*100)}%`;
   } else {
-    badge.classList.remove("visible");
-    curLetter = "";
-    holdStart = null;
-    holdFill.style.width = "0%";
-    return;
+    badge.classList.remove("visible", "locked");
   }
 
-  // ── Hold-to-confirm ────────────────────────────────────────────────────────
-  if (letter !== curLetter) {
-    curLetter = letter;
-    holdStart = now;
-    holdFill.style.width = "0%";
-  } else if (holdStart !== null) {
-    const elapsed  = now - holdStart;
+  // ── Hold-to-confirm logic ─────────────────────────────────────────
+  // Progress bar only fills when stable confidence ≥ CONF_MIN (85%)
+  if (stableConf >= CONF_MIN && stableLetter !== "?") {
+    if (stableLetter !== curLetter) {
+      curLetter = stableLetter;
+      holdStart = now;
+    }
+    const elapsed  = now - (holdStart ?? now);
     const progress = Math.min(1, elapsed / HOLD_MS);
     holdFill.style.width = `${progress * 100}%`;
+    holdFill.className = "ready";
 
     if (elapsed >= HOLD_MS && now - lastConfirm > HOLD_MS * 0.85) {
-      // Confirmed!
-      translated += letter;
+      // ── CONFIRMED ────────────────────────────────────────────────
+      translated += curLetter;
       lastConfirm = now;
-      holdStart   = now;     // reset so holding longer adds more letters
-      updateOutput();
-      // Visual flash
-      badgeLetter.classList.add("confirmed");
-      setTimeout(() => badgeLetter.classList.remove("confirmed"), 350);
+      holdStart   = now;     // reset — holding longer adds another letter
+      updateOutput(translated);
+      flashConfirmed(curLetter);
+      history.length = 0;    // clear vote buffer to avoid double-confirm
     }
+  } else {
+    // Below threshold: show dim bar, don't advance
+    if (stableLetter !== curLetter) {
+      curLetter = stableLetter;
+      holdStart = null;
+    }
+    holdFill.style.width = stableConf > 0.45 ? "4%" : "0%";
+    holdFill.className = "low";
   }
 }
 
-// ── Button handlers ───────────────────────────────────────────────────────────
-clearBtn.addEventListener("click", () => {
-  translated = curLetter = "";
-  holdStart  = null;
+// ═══════════════════════════════════════════════════════════════════════════
+//  EVENT HANDLERS
+// ═══════════════════════════════════════════════════════════════════════════
+document.getElementById("clear-btn").addEventListener("click", () => {
+  translated = ""; curLetter = ""; holdStart = null;
   holdFill.style.width = "0%";
-  updateOutput();
+  history.length = 0;
+  updateOutput("");
 });
 
-camSwitch.addEventListener("click", async () => {
+document.getElementById("cam-switch").addEventListener("click", async () => {
   facingMode = facingMode === "user" ? "environment" : "user";
   running = false;
   await startCamera(facingMode);
-  running = true;
-  loop();
+  running = true; loop();
 });
 
-// ── Init ──────────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════════════════════════════
+const loader       = document.getElementById("loader");
+const loaderStatus = document.getElementById("loader-status");
+
 (async () => {
   try {
     loaderStatus.textContent = "Requesting camera…";
@@ -651,21 +1010,18 @@ camSwitch.addEventListener("click", async () => {
     await setupDetector();
 
     loader.classList.add("hidden");
-    statusEl.textContent = "Show hand…";
-    statusEl.className   = "waiting";
-
-    running = true;
-    loop();
+    statusEl.textContent = "Show hand…"; statusEl.className = "waiting";
+    updateOutput("");
+    running = true; loop();
   } catch (err) {
     loaderStatus.textContent = "";
-    const msg = document.createElement("div");
-    msg.style.cssText = "color:#ff5f72;font-size:0.9rem;max-width:300px;text-align:center;line-height:1.5";
-    const isPermission = err.name === "NotAllowedError";
-    msg.innerHTML = isPermission
-      ? "Camera access denied.<br>Allow camera permission and reload."
-      : `Error: ${err.message}<br><br>Make sure you are on <strong>HTTPS</strong> or <strong>localhost</strong>.`;
-    document.querySelector("#loader").appendChild(msg);
     document.querySelector(".spinner").style.display = "none";
+    const msg = document.createElement("div");
+    msg.style.cssText = "color:#ff5f72;font-size:.9rem;max-width:300px;text-align:center;line-height:1.6";
+    msg.innerHTML = err.name === "NotAllowedError"
+      ? "Camera access denied.<br>Allow camera permission and reload."
+      : `Error: ${err.message}<br><small>Open via <strong>HTTPS</strong> or <strong>localhost</strong>.</small>`;
+    loader.appendChild(msg);
     console.error(err);
   }
 })();
