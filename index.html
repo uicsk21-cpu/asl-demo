@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>ASL Translator</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0d0f1c;
+      --panel:     #12152b;
+      --accent:    #00d4ff;
+      --green:     #00e87a;
+      --text:      #f0f2ff;
+      --muted:     #4a5070;
+      --btn:       #3a2d9c;
+      --btn-hover: #5040c0;
+      --border:    #ffffff14;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      overflow: hidden;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* ── App shell ─────────────────────────────── */
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100dvh;   /* dynamic viewport — hides mobile address bar */
+      height: 100vh;    /* fallback */
+    }
+
+    /* ── Camera panel ──────────────────────────── */
+    #cam-panel {
+      position: relative;
+      flex: 0 0 56%;
+      background: #000;
+      overflow: hidden;
+    }
+
+    #video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);   /* mirror for natural selfie view */
+      display: block;
+    }
+
+    #skeleton-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      /* canvas is drawn un-mirrored; we flip here to match video */
+      transform: scaleX(-1);
+      pointer-events: none;
+    }
+
+    /* Status chip top-left */
+    #status {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      padding: 5px 14px;
+      border-radius: 20px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      transition: color 0.3s, border-color 0.3s;
+    }
+    #status.loading  { color: var(--muted);  border: 1px solid var(--muted);  background: #0008; }
+    #status.waiting  { color: var(--muted);  border: 1px solid var(--muted);  background: #0008; }
+    #status.detected { color: var(--green);  border: 1px solid var(--green);  background: #00e87a18; }
+    #status.error    { color: #ff5f72;       border: 1px solid #ff5f72;       background: #ff5f7218; }
+
+    /* Detected-letter badge bottom-left of camera */
+    #badge {
+      position: absolute;
+      bottom: 18px;
+      left: 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 18px 8px 14px;
+      background: rgba(0,0,0,0.68);
+      border: 1.5px solid var(--accent);
+      border-radius: 14px;
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      opacity: 0;
+      transform: translateY(6px);
+      transition: opacity 0.2s, transform 0.2s;
+    }
+    #badge.visible { opacity: 1; transform: translateY(0); }
+
+    #badge-letter {
+      font-size: 2.8rem;
+      font-weight: 900;
+      color: var(--accent);
+      line-height: 1;
+      transition: color 0.25s;
+    }
+    #badge-letter.confirmed { color: var(--green); }
+
+    #badge-right { display: flex; flex-direction: column; gap: 4px; }
+    #badge-conf  { font-size: 0.8rem; color: #aaa; }
+    #badge-hint  { font-size: 0.68rem; color: var(--muted); }
+
+    /* Hold-progress bar at bottom edge of camera */
+    #hold-track {
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 5px;
+      background: rgba(255,255,255,0.08);
+    }
+    #hold-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--accent), var(--green));
+      border-radius: 0 3px 3px 0;
+      transition: width 0.05s linear;
+    }
+
+    /* ── Text panel ────────────────────────────── */
+    #text-panel {
+      flex: 1;
+      min-height: 0;
+      background: var(--panel);
+      border-top: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      padding: 16px 20px 20px;
+      gap: 14px;
+    }
+
+    #panel-label {
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+
+    /* The big output text — the "second screen" for the employee */
+    #output {
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      /* clamp: min 2rem, fluid, max 5rem */
+      font-size: clamp(2rem, 9.5vw, 5rem);
+      font-weight: 800;
+      letter-spacing: 0.14em;
+      color: var(--text);
+      word-break: break-all;
+      line-height: 1.15;
+      /* wrap at bottom if multi-line */
+      align-items: flex-start;
+      padding-top: 4px;
+    }
+    #output.empty {
+      font-size: 1.1rem;
+      font-weight: 400;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+      align-items: center;
+    }
+
+    /* Flashing newly added letter  */
+    @keyframes letterPop {
+      0%   { color: var(--green); }
+      100% { color: var(--text);  }
+    }
+    .pop { animation: letterPop 0.5s ease-out forwards; }
+
+    /* ── Bottom controls ───────────────────────── */
+    #controls {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+
+    #clear-btn {
+      padding: 14px 32px;
+      background: var(--btn);
+      color: var(--text);
+      border: none;
+      border-radius: 14px;
+      font-size: 1rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      cursor: pointer;
+      touch-action: manipulation;
+      transition: background 0.15s, transform 0.1s;
+      user-select: none;
+    }
+    #clear-btn:active { background: var(--btn-hover); transform: scale(0.97); }
+
+    #char-count { font-size: 0.82rem; color: var(--muted); }
+
+    /* ── Camera-switch button ──────────────────── */
+    #cam-switch {
+      position: absolute;
+      top: 10px;
+      right: 12px;
+      background: rgba(0,0,0,0.55);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      font-size: 1.3rem;
+      padding: 7px 10px;
+      cursor: pointer;
+      touch-action: manipulation;
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+    }
+
+    /* ── Landscape: side-by-side ───────────────── */
+    @media (orientation: landscape) and (min-aspect-ratio: 13/9) {
+      #app      { flex-direction: row; }
+      #cam-panel { flex: 1; height: 100%; }
+      #text-panel {
+        width: 44%;
+        height: 100%;
+        flex-shrink: 0;
+        border-top: none;
+        border-left: 1px solid var(--border);
+      }
+    }
+
+    /* ── Loading overlay ───────────────────────── */
+    #loader {
+      position: fixed;
+      inset: 0;
+      background: var(--bg);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      z-index: 10;
+      transition: opacity 0.4s;
+    }
+    #loader.hidden { opacity: 0; pointer-events: none; }
+
+    #loader-title  { font-size: 1.4rem; font-weight: 700; color: var(--accent); }
+    #loader-status { font-size: 0.9rem; color: var(--muted); }
+
+    .spinner {
+      width: 40px; height: 40px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<!-- ── Loading screen ─────────────────────────── -->
+<div id="loader">
+  <div class="spinner"></div>
+  <div id="loader-title">ASL Translator</div>
+  <div id="loader-status">Starting camera…</div>
+</div>
+
+<!-- ── Main app ───────────────────────────────── -->
+<div id="app">
+
+  <!-- Camera panel -->
+  <div id="cam-panel">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="skeleton-canvas"></canvas>
+
+    <div id="status" class="loading">Loading…</div>
+    <button id="cam-switch" title="Switch camera">⇄</button>
+
+    <div id="badge">
+      <span id="badge-letter">A</span>
+      <div id="badge-right">
+        <span id="badge-conf">—</span>
+        <span id="badge-hint">Hold to confirm</span>
+      </div>
+    </div>
+
+    <div id="hold-track">
+      <div id="hold-fill"></div>
+    </div>
+  </div>
+
+  <!-- Text / translation panel -->
+  <div id="text-panel">
+    <div id="panel-label">Translated text</div>
+    <div id="output" class="empty">Show a hand sign…</div>
+    <div id="controls">
+      <button id="clear-btn">⌫  CLEAR</button>
+      <span id="char-count">0 chars</span>
+    </div>
+  </div>
+
+</div>
+
+<script type="module">
+// ─────────────────────────────────────────────────────────────────────────────
+//  Imports — MediaPipe Tasks Vision (hand landmarks) via CDN
+// ─────────────────────────────────────────────────────────────────────────────
+import { HandLandmarker, FilesetResolver }
+  from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/+esm";
+
+// ── Config ────────────────────────────────────────────────────────────────────
+const WASM_CDN    = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
+const MODEL_URL   = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
+const CONF_MIN    = 0.68;   // minimum classifier confidence to show a letter
+const HOLD_MS     = 800;    // ms to hold a sign before confirming it
+
+// Hand skeleton connections (21 landmarks)
+const CONNECTIONS = [
+  [0,1],[1,2],[2,3],[3,4],          // Thumb
+  [0,5],[5,6],[6,7],[7,8],          // Index
+  [0,9],[9,10],[10,11],[11,12],     // Middle
+  [0,13],[13,14],[14,15],[15,16],   // Ring
+  [0,17],[17,18],[18,19],[19,20],   // Pinky
+  [5,9],[9,13],[13,17],             // Palm
+];
+
+// ── DOM refs ──────────────────────────────────────────────────────────────────
+const loader       = document.getElementById("loader");
+const loaderStatus = document.getElementById("loader-status");
+const video        = document.getElementById("video");
+const canvas       = document.getElementById("skeleton-canvas");
+const ctx          = canvas.getContext("2d");
+const statusEl     = document.getElementById("status");
+const badge        = document.getElementById("badge");
+const badgeLetter  = document.getElementById("badge-letter");
+const badgeConf    = document.getElementById("badge-conf");
+const holdFill     = document.getElementById("hold-fill");
+const outputEl     = document.getElementById("output");
+const charCount    = document.getElementById("char-count");
+const clearBtn     = document.getElementById("clear-btn");
+const camSwitch    = document.getElementById("cam-switch");
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let translated  = "";
+let curLetter   = "";
+let holdStart   = null;
+let lastConfirm = 0;
+let facingMode  = "user";
+let detector    = null;
+let stream      = null;
+let lastTime    = -1;
+let running     = false;
+
+// ── Geometry helpers ──────────────────────────────────────────────────────────
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
+function thumbExtended(lm, hs) {
+  // Thumb is out when its tip is far from the index-finger MCP
+  return dist(lm[4], lm[5]) / hs > 0.46;
+}
+
+function fingerUp(lm, tipIdx, pipIdx) {
+  // A finger is "up" when the tip is above (smaller y) the PIP joint.
+  // Assumes hand is held upright; works for selfie-mode demos.
+  return lm[tipIdx].y < lm[pipIdx].y;
+}
+
+// ── ASL Classifier ─────────────────────────────────────────────────────────────
+// Classifies 21 MediaPipe hand landmarks → [letter, confidence 0‑1].
+// Uses geometric rules derived from the standard ASL static alphabet.
+// Letters J and Z require motion and are not detectable from a single frame.
+// ──────────────────────────────────────────────────────────────────────────────
+function classifyASL(lm) {
+  const hs = dist(lm[0], lm[9]) || 0.001;  // hand size (wrist → middle MCP)
+
+  // Binary finger states
+  const T = thumbExtended(lm, hs);
+  const I = fingerUp(lm, 8, 6);
+  const M = fingerUp(lm, 12, 10);
+  const R = fingerUp(lm, 16, 14);
+  const P = fingerUp(lm, 20, 18);
+
+  // Key distances (normalised to hand size)
+  const tI  = dist(lm[4], lm[8])  / hs;   // thumb tip ↔ index tip
+  const iM  = dist(lm[8], lm[12]) / hs;   // index tip ↔ middle tip (spread)
+  const mR  = dist(lm[12],lm[16]) / hs;   // middle ↔ ring spread
+  const tPm = dist(lm[4], lm[9])  / hs;   // thumb ↔ palm centre
+
+  // Index direction: is it pointing mostly sideways?
+  const idx_dx = Math.abs(lm[8].x - lm[5].x);
+  const idx_dy = Math.abs(lm[8].y - lm[5].y);
+  const idxSide = idx_dx > idx_dy * 0.75;
+
+  // Index hooked (tip BELOW its DIP joint → X shape)
+  const idxHook = lm[8].y > lm[7].y;
+
+  // ── All fingers closed ────────────────────────────────────────────────────
+  if (!T && !I && !M && !R && !P) {
+    // Discriminate A / E / S / M / N / T by thumb and fingertip geometry
+    const tipAvgY  = (lm[8].y + lm[12].y + lm[16].y + lm[20].y) / 4;
+    const mcpAvgY  = (lm[5].y + lm[9].y  + lm[13].y + lm[17].y) / 4;
+    const tipsNearMCP = tipAvgY > mcpAvgY - 0.04;   // bent at knuckle, not tucked
+
+    if (tipsNearMCP)             return ["E", 0.73];  // fingers bent at knuckle level
+    if (tPm < hs * 0.55 && lm[4].y < lm[6].y)
+                                 return ["S", 0.76];  // thumb across knuckles
+    if (tPm < hs * 0.52)        return ["T", 0.70];  // thumb between index & middle
+    return                              ["A", 0.80];  // fist, thumb at side
+  }
+
+  // ── Only pinky up ─────────────────────────────────────────────────────────
+  if (!T && !I && !M && !R && P)  return ["I", 0.90];
+
+  // ── Only index up ─────────────────────────────────────────────────────────
+  if (!T && I && !M && !R && !P) {
+    if (idxHook)  return ["X", 0.82];
+    if (idxSide)  return ["G", 0.78];
+    return               ["D", 0.83];
+  }
+
+  // ── Thumb + pinky (Y) ─────────────────────────────────────────────────────
+  if (T && !I && !M && !R && P)   return ["Y", 0.91];
+
+  // ── Thumb + index only (L) ────────────────────────────────────────────────
+  if (T && I && !M && !R && !P)   return ["L", 0.90];
+
+  // ── Thumb only + curved fingers → C or O ─────────────────────────────────
+  if (T && !I && !M && !R && !P) {
+    return tI < 0.50 ? ["O", 0.75] : ["C", 0.72];
+  }
+
+  // ── C shape without thumb detected ───────────────────────────────────────
+  // All fingers partially curved (none fully up, checked via tip-MCP relation)
+  {
+    const iCurved  = !I && lm[8].y  < lm[5].y  + 0.02;   // index slightly raised
+    const mCurved  = !M && lm[12].y < lm[9].y  + 0.02;
+    const rCurved  = !R && lm[16].y < lm[13].y + 0.02;
+    const pCurved  = !P && lm[20].y < lm[17].y + 0.02;
+    if (iCurved && mCurved && rCurved && pCurved) {
+      return tI < 0.45 ? ["O", 0.72] : ["C", 0.70];
+    }
+  }
+
+  // ── Two fingers: index + middle ───────────────────────────────────────────
+  if (!T && I && M && !R && !P) {
+    if (idxSide)          return ["H", 0.79];
+    if (iM > 0.42)        return ["V", 0.86];   // peace sign — spread
+    const crossed = dist(lm[8], lm[12]) / hs < 0.16;
+    return crossed       ? ["R", 0.74] : ["U", 0.83];
+  }
+
+  // ── Three fingers: index + middle + ring ──────────────────────────────────
+  if (!T && I && M && R && !P)  return ["W", 0.86];
+
+  // ── Three fingers: middle + ring + pinky (+ thumb touching index → F) ────
+  if (!T && !I && M && R && P)  return ["F", tI < 0.38 ? 0.82 : 0.72];
+
+  // ── Four fingers up — B ───────────────────────────────────────────────────
+  if (!T && I && M && R && P)   return ["B", 0.92];
+
+  // ── Thumb + index + middle — K ────────────────────────────────────────────
+  if (T && I && M && !R && !P)  return ["K", 0.83];
+
+  // ── Open hand (all five) ──────────────────────────────────────────────────
+  if (T && I && M && R && P)    return ["5", 0.70];  // not an ASL letter
+
+  return ["?", 0.0];
+}
+
+// ── Draw hand skeleton ────────────────────────────────────────────────────────
+function drawSkeleton(landmarks) {
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  // Landmark pixel coords (canvas is CSS-flipped to match mirrored video)
+  const pts = landmarks.map(l => ({ x: l.x * w, y: l.y * h }));
+
+  // Connections
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = "rgba(0, 212, 255, 0.55)";
+  CONNECTIONS.forEach(([a, b]) => {
+    ctx.beginPath();
+    ctx.moveTo(pts[a].x, pts[a].y);
+    ctx.lineTo(pts[b].x, pts[b].y);
+    ctx.stroke();
+  });
+
+  // Joints
+  pts.forEach((p, i) => {
+    const tip = [4, 8, 12, 16, 20].includes(i);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, tip ? 7 : 4, 0, Math.PI * 2);
+    ctx.fillStyle = tip ? "#00d4ff" : "#008fb0";
+    ctx.fill();
+    if (tip) {
+      ctx.strokeStyle = "rgba(255,255,255,0.35)";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+  });
+}
+
+// ── Update translated-text display ───────────────────────────────────────────
+function updateOutput() {
+  charCount.textContent = `${translated.length} char${translated.length !== 1 ? "s" : ""}`;
+  if (!translated) {
+    outputEl.className = "empty";
+    outputEl.textContent = "Show a hand sign…";
+    return;
+  }
+  outputEl.className = "";
+  // Show last ~36 chars split in lines of 12 for readability at distance
+  const view = translated.slice(-36);
+  outputEl.textContent = view;
+}
+
+// ── Camera setup ──────────────────────────────────────────────────────────────
+async function startCamera(facing) {
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 } },
+    audio: false,
+  });
+  video.srcObject = stream;
+  await new Promise(r => { video.onloadedmetadata = r; });
+  await video.play();
+}
+
+// ── MediaPipe setup ───────────────────────────────────────────────────────────
+async function setupDetector() {
+  const fileset = await FilesetResolver.forVisionTasks(WASM_CDN);
+  detector = await HandLandmarker.createFromOptions(fileset, {
+    baseOptions: { modelAssetPath: MODEL_URL, delegate: "GPU" },
+    runningMode: "VIDEO",
+    numHands: 1,
+    minHandDetectionConfidence: 0.55,
+    minHandPresenceConfidence: 0.50,
+    minTrackingConfidence: 0.50,
+  });
+}
+
+// ── Main detection / render loop ──────────────────────────────────────────────
+function loop() {
+  if (!running) return;
+  requestAnimationFrame(loop);
+
+  if (video.readyState < 2) return;
+
+  // Keep canvas in sync with actual video resolution
+  if (canvas.width  !== video.videoWidth)  canvas.width  = video.videoWidth;
+  if (canvas.height !== video.videoHeight) canvas.height = video.videoHeight;
+
+  const now = performance.now();
+  if (video.currentTime === lastTime) return;
+  lastTime = video.currentTime;
+
+  const result = detector.detectForVideo(video, now);
+  const lmList = result.landmarks;
+
+  if (!lmList || lmList.length === 0) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    statusEl.textContent = "Show hand…";
+    statusEl.className   = "waiting";
+    badge.classList.remove("visible");
+    curLetter = "";
+    holdStart = null;
+    holdFill.style.width = "0%";
+    return;
+  }
+
+  const lm = lmList[0];
+  drawSkeleton(lm);
+  statusEl.textContent = "Hand detected";
+  statusEl.className   = "detected";
+
+  const [letter, conf] = classifyASL(lm);
+  const show = letter !== "?" && conf >= CONF_MIN;
+
+  if (show) {
+    badge.classList.add("visible");
+    badgeLetter.textContent = letter;
+    badgeConf.textContent   = `${Math.round(conf * 100)}%`;
+  } else {
+    badge.classList.remove("visible");
+    curLetter = "";
+    holdStart = null;
+    holdFill.style.width = "0%";
+    return;
+  }
+
+  // ── Hold-to-confirm ────────────────────────────────────────────────────────
+  if (letter !== curLetter) {
+    curLetter = letter;
+    holdStart = now;
+    holdFill.style.width = "0%";
+  } else if (holdStart !== null) {
+    const elapsed  = now - holdStart;
+    const progress = Math.min(1, elapsed / HOLD_MS);
+    holdFill.style.width = `${progress * 100}%`;
+
+    if (elapsed >= HOLD_MS && now - lastConfirm > HOLD_MS * 0.85) {
+      // Confirmed!
+      translated += letter;
+      lastConfirm = now;
+      holdStart   = now;     // reset so holding longer adds more letters
+      updateOutput();
+      // Visual flash
+      badgeLetter.classList.add("confirmed");
+      setTimeout(() => badgeLetter.classList.remove("confirmed"), 350);
+    }
+  }
+}
+
+// ── Button handlers ───────────────────────────────────────────────────────────
+clearBtn.addEventListener("click", () => {
+  translated = curLetter = "";
+  holdStart  = null;
+  holdFill.style.width = "0%";
+  updateOutput();
+});
+
+camSwitch.addEventListener("click", async () => {
+  facingMode = facingMode === "user" ? "environment" : "user";
+  running = false;
+  await startCamera(facingMode);
+  running = true;
+  loop();
+});
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+(async () => {
+  try {
+    loaderStatus.textContent = "Requesting camera…";
+    await startCamera(facingMode);
+
+    loaderStatus.textContent = "Loading hand-detection model (~8 MB)…";
+    await setupDetector();
+
+    loader.classList.add("hidden");
+    statusEl.textContent = "Show hand…";
+    statusEl.className   = "waiting";
+
+    running = true;
+    loop();
+  } catch (err) {
+    loaderStatus.textContent = "";
+    const msg = document.createElement("div");
+    msg.style.cssText = "color:#ff5f72;font-size:0.9rem;max-width:300px;text-align:center;line-height:1.5";
+    const isPermission = err.name === "NotAllowedError";
+    msg.innerHTML = isPermission
+      ? "Camera access denied.<br>Allow camera permission and reload."
+      : `Error: ${err.message}<br><br>Make sure you are on <strong>HTTPS</strong> or <strong>localhost</strong>.`;
+    document.querySelector("#loader").appendChild(msg);
+    document.querySelector(".spinner").style.display = "none";
+    console.error(err);
+  }
+})();
+</script>
+</body>
+</html>
