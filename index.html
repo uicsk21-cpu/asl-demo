@@ -351,7 +351,7 @@ import { HandLandmarker, FilesetResolver }
 // ═══════════════════════════════════════════════════════════════════════
 const WASM_CDN     = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
 const MP_MODEL_URL = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
-const GEMINI_URL   = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent";
+const GEMINI_URL   = "https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent";
 const GEMINI_PROMPT = "Look at this hand. What ASL letter is being signed? Reply with ONLY a single capital letter A-Z, or NONE if no clear ASL letter is visible.";
 const POLL_MS      = 2000;   // ms between Gemini calls (free tier: 15 RPM max)
 const CONFIRM_NEED = 2;      // consecutive same-letter responses needed to confirm
