@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <title>ASL Translator — Gemini Vision</title>
+  <title>ASL Translator</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -30,51 +30,19 @@
       -webkit-tap-highlight-color: transparent;
     }
 
-    /* ── Outer wrapper: API bar + app stacked ───────────────────── */
+    /* ── Outer wrapper ───────────────────────────────────────────── */
     #wrapper {
       display: flex; flex-direction: column;
       height: 100dvh; height: 100vh;
     }
 
-    /* ── API Key bar ─────────────────────────────────────────────── */
-    #apibar {
-      flex-shrink: 0;
-      display: flex; align-items: center; gap: 8px;
-      padding: 0 12px;
-      height: 48px;
-      background: #0a0c18;
-      border-bottom: 1px solid var(--border);
+    /* ── Top-3 candidates display ────────────────────────────────── */
+    #candidates {
+      position: absolute; bottom: 62px; left: 12px;
+      font-size: 0.65rem; letter-spacing: .05em;
+      color: rgba(255,255,255,.50);
+      pointer-events: none;
     }
-
-    #apibar-icon { font-size: 1rem; flex-shrink: 0; }
-
-    #apikey-input {
-      flex: 1;
-      background: rgba(255,255,255,.06);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 7px 12px;
-      color: var(--text);
-      font-size: 0.8rem;
-      font-family: monospace;
-      letter-spacing: 0.04em;
-      outline: none;
-      transition: border-color .2s;
-      min-width: 0;
-    }
-    #apikey-input:focus { border-color: var(--accent); }
-    #apikey-input::placeholder { color: var(--muted); font-family: sans-serif; letter-spacing: 0; }
-
-    #apibar-status {
-      flex-shrink: 0;
-      font-size: 0.7rem;
-      padding: 3px 9px;
-      border-radius: 10px;
-      white-space: nowrap;
-    }
-    #apibar-status.ok    { color: var(--green); background: #00e87a14; }
-    #apibar-status.err   { color: var(--red);   background: #ff5f7214; }
-    #apibar-status.empty { color: var(--muted); }
 
     /* ── Main app (fills remaining height) ──────────────────────── */
     #app {
@@ -292,15 +260,6 @@
 <!-- Outer wrapper -->
 <div id="wrapper">
 
-  <!-- API key bar -->
-  <div id="apibar">
-    <span id="apibar-icon">🔑</span>
-    <input id="apikey-input" type="password"
-           placeholder="Paste Gemini API key (free at aistudio.google.com)"
-           autocomplete="off" spellcheck="false">
-    <span id="apibar-status" class="empty">No key</span>
-  </div>
-
   <!-- App -->
   <div id="app">
 
@@ -318,9 +277,12 @@
         <span id="badge-ltr">—</span>
         <div id="badge-meta">
           <span id="badge-sub">—</span>
-          <span id="badge-hint">Gemini Vision</span>
+          <span id="badge-hint">ASL Classifier</span>
         </div>
       </div>
+
+      <!-- Top-3 candidates -->
+      <div id="candidates"></div>
 
       <!-- Full-frame flash on confirm -->
       <div id="flash"></div>
@@ -351,13 +313,9 @@ import { HandLandmarker, FilesetResolver }
 // ═══════════════════════════════════════════════════════════════════════
 const WASM_CDN     = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
 const MP_MODEL_URL = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
-const GEMINI_URL   = "https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent";
-const GEMINI_PROMPT = "This is a close-up of a hand making an ASL (American Sign Language) fingerspelling sign. What single letter A-Z is being signed? Reply with ONLY one capital letter. If unclear, reply NONE.";
-const MIN_POLL_MS  = 4000;   // minimum ms between Gemini calls
-const COOLDOWN_MS  = 15000;  // ms to wait after a 429 rate-limit error
-const STILL_MS     = 1500;   // ms hand must be still before capture
-const STILL_THRESH = 0.02;   // max per-landmark movement as fraction of hand size
-const CONFIRM_NEED = 2;      // consecutive same-letter responses needed to confirm
+const HOLD_MS      = 800;   // ms to hold a sign before confirming
+const CONF_THRESH  = 0.78;  // fraction of recent frames that must agree
+const HIST_FRAMES  = 10;    // sliding window size for majority vote
 
 const CONNECTIONS = [
   [0,1],[1,2],[2,3],[3,4],
@@ -371,64 +329,34 @@ const CONNECTIONS = [
 // ═══════════════════════════════════════════════════════════════════════
 //  STATE
 // ═══════════════════════════════════════════════════════════════════════
-let apiKey        = localStorage.getItem("gemini_api_key") || "";
-let translated    = "";
-let lastLetter    = "";   // last Gemini result
-let consecCount   = 0;    // consecutive same-letter count
-let isFetching    = false;
-let lastPollTime  = 0;
-let cooldownUntil = 0;     // performance.now() timestamp until which calls are blocked
-let stillSince    = 0;     // performance.now() when hand became still (0 = not still)
-let prevLandmarks = null;  // landmark snapshot from previous frame for stillness check
-let lastVidTime   = -1;
-let handPresent   = false;
-let running       = false;
-let facingMode    = "user";
-let detector      = null;
-let stream        = null;
+let translated  = "";
+let frameHist   = [];    // last N top letters for majority vote
+let holdLetter  = null;  // letter currently building hold
+let holdStart   = 0;     // timestamp when hold started
+let lastConfirm = "";    // last confirmed letter (prevent immediate re-confirm)
+let lastVidTime = -1;
+let handPresent = false;
+let running     = false;
+let facingMode  = "user";
+let detector    = null;
+let stream      = null;
 
 // ═══════════════════════════════════════════════════════════════════════
 //  DOM REFS
 // ═══════════════════════════════════════════════════════════════════════
-const video       = document.getElementById("video");
-const canvas      = document.getElementById("skeleton-canvas");
-const ctx         = canvas.getContext("2d");
-const statusEl    = document.getElementById("status");
-const badge       = document.getElementById("badge");
-const badgeLtr    = document.getElementById("badge-ltr");
-const badgeSub    = document.getElementById("badge-sub");
-const badgeHint   = document.getElementById("badge-hint");
-const pollFill    = document.getElementById("poll-fill");
-const flashEl     = document.getElementById("flash");
-const outputEl    = document.getElementById("output");
-const charCount   = document.getElementById("char-count");
-const apikeyInput = document.getElementById("apikey-input");
-const apibarStatus = document.getElementById("apibar-status");
-
-// ═══════════════════════════════════════════════════════════════════════
-//  API KEY MANAGEMENT
-// ═══════════════════════════════════════════════════════════════════════
-function applyKey(key) {
-  apiKey = key.trim();
-  localStorage.setItem("gemini_api_key", apiKey);
-  if (apiKey) {
-    apibarStatus.textContent = "Key saved";
-    apibarStatus.className = "ok";
-  } else {
-    apibarStatus.textContent = "No key";
-    apibarStatus.className = "empty";
-  }
-}
-
-// Initialise input from saved value
-if (apiKey) {
-  apikeyInput.value = apiKey;
-  apibarStatus.textContent = "Key saved";
-  apibarStatus.className = "ok";
-}
-
-apikeyInput.addEventListener("change", () => applyKey(apikeyInput.value));
-apikeyInput.addEventListener("keydown", e => { if (e.key === "Enter") applyKey(apikeyInput.value); });
+const video        = document.getElementById("video");
+const canvas       = document.getElementById("skeleton-canvas");
+const ctx          = canvas.getContext("2d");
+const statusEl     = document.getElementById("status");
+const badge        = document.getElementById("badge");
+const badgeLtr     = document.getElementById("badge-ltr");
+const badgeSub     = document.getElementById("badge-sub");
+const badgeHint    = document.getElementById("badge-hint");
+const pollFill     = document.getElementById("poll-fill");
+const flashEl      = document.getElementById("flash");
+const outputEl     = document.getElementById("output");
+const charCount    = document.getElementById("char-count");
+const candidatesEl = document.getElementById("candidates");
 
 // ═══════════════════════════════════════════════════════════════════════
 //  CAMERA
@@ -484,161 +412,137 @@ function drawSkeleton(lm, w, h) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-//  FRAME CAPTURE  (crops to hand bounding box for a clear close-up)
+//  ASL GEOMETRIC CLASSIFIER
 // ═══════════════════════════════════════════════════════════════════════
-function captureFrame(landmarks) {
-  const vw = video.videoWidth, vh = video.videoHeight;
-  // Compute bounding box from normalised landmark coordinates
-  let minX = 1, maxX = 0, minY = 1, maxY = 0;
-  for (const lm of landmarks) {
-    if (lm.x < minX) minX = lm.x;  if (lm.x > maxX) maxX = lm.x;
-    if (lm.y < minY) minY = lm.y;  if (lm.y > maxY) maxY = lm.y;
-  }
-  // Pad 40% on each side so fingers aren't clipped
-  const pw = (maxX - minX) * 0.40, ph = (maxY - minY) * 0.40;
-  minX = Math.max(0, minX - pw);  maxX = Math.min(1, maxX + pw);
-  minY = Math.max(0, minY - ph);  maxY = Math.min(1, maxY + ph);
+function classifyASL(lm) {
+  // Returns [{letter, confidence}, ...] sorted descending, or null
+  const scale = Math.hypot(lm[9].x - lm[0].x, lm[9].y - lm[0].y);
+  if (scale < 0.05) return null;
 
-  const sx = minX * vw, sy = minY * vh;
-  const sw = (maxX - minX) * vw,  sh = (maxY - minY) * vh;
-  if (sw < 10 || sh < 10) return null;
+  const d = (a, b) => Math.hypot(lm[a].x - lm[b].x, lm[a].y - lm[b].y) / scale;
 
-  const c = document.createElement("canvas");
-  c.width = Math.round(sw);  c.height = Math.round(sh);
-  c.getContext("2d").drawImage(video, sx, sy, sw, sh, 0, 0, c.width, c.height);
-  return c.toDataURL("image/jpeg", 0.90).split(",")[1];
+  // Finger extension: positive = tip above MCP (finger pointing up in image)
+  const ie = (lm[5].y  - lm[8].y)  / scale;   // index
+  const me = (lm[9].y  - lm[12].y) / scale;   // middle
+  const re = (lm[13].y - lm[16].y) / scale;   // ring
+  const pe = (lm[17].y - lm[20].y) / scale;   // pinky
+
+  const iUp = ie > 0.35,   iDn = ie < 0.08;
+  const mUp = me > 0.35,   mDn = me < 0.08;
+  const rUp = re > 0.35,   rDn = re < 0.08;
+  const pUp = pe > 0.35,   pDn = pe < 0.08;
+
+  // Thumb
+  const thumbOut      = d(4, 5) > 0.55;           // abducted from index MCP
+  const avgPIPy       = (lm[6].y + lm[10].y + lm[14].y + lm[18].y) / 4;
+  const thumbOverFist = !thumbOut &&               // tip inside finger span AND above PIPs
+                        lm[4].y < avgPIPy &&
+                        lm[4].x > Math.min(lm[17].x, lm[5].x) - 0.12 * scale &&
+                        lm[4].x < Math.max(lm[17].x, lm[5].x) + 0.12 * scale;
+  const thumbUnder    = lm[4].y > (lm[5].y + lm[9].y + lm[13].y) / 3; // tip below MCPs
+
+  // Tip distances (normalised)
+  const ti = d(4, 8);   // thumb ↔ index tip
+  const tm = d(4, 12);  // thumb ↔ middle tip
+  const tr = d(4, 16);  // thumb ↔ ring tip
+  const im = d(8, 12);  // index ↔ middle tip spread
+  const mr = d(12, 16); // middle ↔ ring tip spread
+
+  // Directional helpers
+  const iSide = Math.abs(lm[8].x  - lm[5].x)  > Math.abs(lm[8].y  - lm[5].y);
+  const mSide = Math.abs(lm[12].x - lm[9].x)  > Math.abs(lm[12].y - lm[9].y);
+  const iDown = lm[8].y  > lm[0].y + 0.10 * scale;  // index pointing down
+  const tDown = lm[4].y  > lm[0].y + 0.10 * scale;  // thumb pointing down
+  const iHook = !iUp && lm[8].y > lm[6].y - 0.06 * scale; // index hooked (X)
+
+  // Weighted scorer: alternating (condition, weight) pairs → 0..1
+  const W = (...args) => {
+    let sum = 0, total = 0;
+    for (let k = 0; k < args.length; k += 2) {
+      total += args[k + 1];
+      if (args[k]) sum += args[k + 1];
+    }
+    return total > 0 ? sum / total : 0;
+  };
+
+  const scores = {
+    // ── Closed-fist group (all fingers curled) ───────────────────────
+    A: W(iDn,3, mDn,3, rDn,3, pDn,3, thumbOut,3, !thumbOverFist,2),
+    E: W(ie<0.2,2, me<0.2,2, re<0.2,2, pe<0.2,2, thumbUnder,3, !thumbOut,2),
+    M: W(iDn,3, mDn,3, rDn,2, pDn,1, thumbUnder,4, !thumbOut,2),
+    N: W(iDn,3, mDn,3, !rUp,2, !pUp,2, thumbUnder,3, !thumbOut,2),
+    S: W(iDn,3, mDn,3, rDn,3, pDn,3, thumbOverFist,4),
+    T: W(iDn,2, mDn,3, rDn,3, pDn,3, d(4,6)<0.35,4, !thumbOut,2),
+
+    // ── Single finger / thumb ────────────────────────────────────────
+    D: W(iUp,4, !mUp,2, !rUp,2, !pUp,2, tm<0.40,2, tr<0.40,2),
+    G: W(iSide,4, !mUp,2, !rUp,2, !pUp,2, thumbOut,2),
+    I: W(!iUp,3, !mUp,3, !rUp,3, pUp,5),
+    L: W(iUp,4, !mUp,3, !rUp,2, !pUp,2, thumbOut,3),
+    X: W(iHook,5, !mUp,3, !rUp,2, !pUp,2),
+
+    // ── Curved / round shapes ────────────────────────────────────────
+    C: W(ie>-0.05&&ie<0.45,2, me>-0.05&&me<0.45,2, re>-0.1&&re<0.4,2,
+         pe>-0.1&&pe<0.4,1, ti>0.25&&ti<0.70,2),
+    F: W(ti<0.22,4, mUp,3, rUp,2, pUp,2, !iUp,2),
+    O: W(ti<0.25,4, tm<0.35,3, tr<0.45,2, !iUp,2, !mUp,2),
+
+    // ── Two-finger group ─────────────────────────────────────────────
+    H: W(iSide,3, mSide,3, !rUp,2, !pUp,2, im<0.28,2),
+    R: W(iUp,4, mUp,4, !rUp,3, !pUp,3, im<0.13,3),
+    U: W(iUp,4, mUp,4, !rUp,3, !pUp,3, im<0.18,3),
+    V: W(iUp,4, mUp,4, !rUp,3, !pUp,3, im>0.22,3),
+
+    // ── Three-finger group ───────────────────────────────────────────
+    K: W(iUp,3, me>0.15&&me<0.5,3, !rUp,2, !pUp,2, thumbOut,2),
+    W: W(iUp,3, mUp,3, rUp,3, !pUp,3),
+
+    // ── Four fingers ─────────────────────────────────────────────────
+    B: W(iUp,3, mUp,3, rUp,3, pUp,3, !thumbOut,2, im<0.25,1, mr<0.25,1),
+
+    // ── Thumb + pinky ────────────────────────────────────────────────
+    Y: W(!iUp,3, !mUp,3, !rUp,3, pUp,4, thumbOut,4),
+
+    // ── Pointing down ────────────────────────────────────────────────
+    P: W(iDown,4, thumbOut,3, !mUp,2, !rUp,2, !pUp,2),
+    Q: W(iDown,3, tDown,4, !mUp,2, !rUp,2, !pUp,2),
+  };
+
+  return Object.entries(scores)
+    .map(([letter, sc]) => ({ letter, confidence: sc }))
+    .sort((a, b) => b.confidence - a.confidence);
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-//  GEMINI API CALL
-// ═══════════════════════════════════════════════════════════════════════
-async function callGemini(landmarks) {
-  if (!apiKey) { setBadgeError("No API key"); return; }
-  if (isFetching) return;
-  const now = performance.now();
-  if (now < cooldownUntil) return;
-
-  isFetching = true;
-  lastPollTime = now;
-  setBadgeFetching();
-  pollFill.classList.add("fetching");
-
-  try {
-    const imageB64 = captureFrame(landmarks);
-    if (!imageB64) throw new Error("Frame capture failed");
-
-    const res = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [
-          { text: GEMINI_PROMPT },
-          { inline_data: { mime_type: "image/jpeg", data: imageB64 } }
-        ]}],
-        generationConfig: { maxOutputTokens: 10, temperature: 0.1, topK: 1 },
-      }),
-    });
-
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      const msg = body?.error?.message || `HTTP ${res.status}`;
-      const statusLabel = res.status === 400 ? `400 Bad Request`
-                        : res.status === 401 ? `401 Unauthorized`
-                        : res.status === 403 ? `403 Forbidden`
-                        : res.status === 429 ? `429 Rate Limit`
-                        : `HTTP ${res.status}`;
-      console.error("Gemini error:", res.status, msg, body);
-      apibarStatus.textContent = statusLabel;
-      apibarStatus.className = "err";
-      if (res.status === 429) {
-        cooldownUntil = performance.now() + COOLDOWN_MS;
-      }
-      throw new Error(msg);
-    }
-
-    apibarStatus.textContent = "Key OK ✓";
-    apibarStatus.className = "ok";
-
-    const data = await res.json();
-    const raw  = (data?.candidates?.[0]?.content?.parts?.[0]?.text || "").trim().toUpperCase();
-    handleGeminiResult(raw);
-
-  } catch (err) {
-    console.error("Gemini:", err.message);
-    setBadgeError(err.message);
-  } finally {
-    isFetching = false;
-    pollFill.classList.remove("fetching");
-  }
-}
-
-// ─── Parse and process Gemini's text reply ──────────────────────────
-function handleGeminiResult(raw) {
-  // Accept "A", "A.", "B (open hand)", etc. Reject "NONE", "NO …", empty
-  let letter = null;
-  if (raw && !raw.startsWith("NONE") && !/^NO[\s\b]/.test(raw)) {
-    const m = raw.match(/^([A-Z])[^A-Z]?/);
-    if (m) letter = m[1];
-  }
-
-  if (!letter) {
-    // No sign visible
-    lastLetter  = "";
-    consecCount = 0;
-    setBadgeNone();
-    return;
-  }
-
-  setBadgeLetter(letter, consecCount + 1);
-
-  if (letter === lastLetter) {
-    consecCount++;
-    if (consecCount >= CONFIRM_NEED) {
-      // ── CONFIRMED ──────────────────────────────────────────────
-      translated += letter;
-      updateOutput();
-      flashConfirmed(letter);
-      lastLetter  = "";     // require hand reset before same letter again
-      consecCount = 0;
-      badge.classList.remove("first-seen");
-    } else {
-      badge.classList.add("first-seen");
-    }
-  } else {
-    lastLetter  = letter;
-    consecCount = 1;
-    badge.classList.remove("first-seen", "confirmed-anim");
-  }
+function majorityVote(hist) {
+  if (!hist.length) return { letter: null, fraction: 0 };
+  const counts = {};
+  for (const l of hist) counts[l] = (counts[l] || 0) + 1;
+  const [letter, count] = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+  return { letter, fraction: count / hist.length };
 }
 
 // ═══════════════════════════════════════════════════════════════════════
 //  BADGE UI HELPERS
 // ═══════════════════════════════════════════════════════════════════════
-function setBadgeFetching() {
-  badge.className = "visible fetching";
-  badgeSub.textContent  = "Reading sign…";
-  badgeHint.textContent = "Gemini Vision";
+function showBadge(votedLetter, conf, holdFrac, top3) {
+  badge.className = "visible" + (holdFrac > 0.05 ? " first-seen" : "");
+  badgeLtr.textContent = votedLetter;
+  badgeSub.textContent = holdFrac > 0.05
+    ? `Hold ${Math.round(holdFrac * 100)}%`
+    : `${Math.round(conf * 100)}% match`;
+  badgeHint.textContent = "ASL Classifier";
+  if (candidatesEl && top3.length > 1) {
+    candidatesEl.textContent = top3.slice(1, 3)
+      .map(t => `${t.letter} ${Math.round(t.confidence * 100)}%`).join("  ·  ");
+  }
+  pollFill.classList.remove("fetching");
+  pollFill.style.width = `${Math.min(100, holdFrac * 100)}%`;
 }
 
-function setBadgeLetter(letter, count) {
-  badge.className = "visible" + (count >= CONFIRM_NEED ? " first-seen" : "");
-  badgeLtr.textContent  = letter;
-  badgeSub.textContent  = count >= CONFIRM_NEED ? "Hold…" : `Seen ${count}/${CONFIRM_NEED}`;
-  badgeHint.textContent = "Gemini Vision";
-}
-
-function setBadgeNone() {
-  badge.className = "visible";
-  badgeLtr.textContent  = "—";
-  badgeSub.textContent  = "No sign";
-  badgeHint.textContent = "Gemini Vision";
-}
-
-function setBadgeError(msg) {
-  badge.className = "visible";
-  badgeLtr.textContent  = "⚠";
-  badgeSub.textContent  = msg;
-  badgeHint.textContent = "Check API key";
+function hideBadge() {
+  badge.className = "";
+  if (candidatesEl) candidatesEl.textContent = "";
+  pollFill.style.width = "0%";
 }
 
 function flashConfirmed(letter) {
@@ -647,14 +551,9 @@ function flashConfirmed(letter) {
   void flashEl.offsetWidth;
   flashEl.classList.add("pop");
   setTimeout(() => flashEl.classList.remove("pop"), 600);
-  // Show confirmed message in badge briefly
   badge.classList.add("confirmed-anim");
-  badgeLtr.textContent = letter;
-  badgeSub.textContent = "✓ Letter confirmed";
-  setTimeout(() => {
-    badge.classList.remove("confirmed-anim");
-    setBadgeNone();
-  }, 900);
+  badgeSub.textContent = "✓ Added";
+  setTimeout(() => badge.classList.remove("confirmed-anim"), 700);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -684,93 +583,55 @@ function loop() {
   if (video.currentTime === lastVidTime) return;
   lastVidTime = video.currentTime;
 
-  const now = performance.now();
-
-  // ── MediaPipe: detect hand presence & draw skeleton ──────────────
+  const now    = performance.now();
   const result = detector.detectForVideo(video, now);
   const lmList = result?.landmarks;
   handPresent  = !!(lmList?.length);
 
-  if (handPresent) {
-    drawSkeleton(lmList[0], canvas.width, canvas.height);
-  } else {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-  }
-
-  // ── Hand stillness check ──────────────────────────────────────────
-  let handStill = false;
-  if (handPresent && prevLandmarks) {
-    const wrist  = lmList[0][0],  midMCP = lmList[0][9];
-    const hSize  = Math.hypot(midMCP.x - wrist.x, midMCP.y - wrist.y);
-    if (hSize > 0.001) {
-      let maxMove = 0;
-      for (let i = 0; i < lmList[0].length; i++) {
-        const m = Math.hypot(lmList[0][i].x - prevLandmarks[i].x,
-                             lmList[0][i].y - prevLandmarks[i].y) / hSize;
-        if (m > maxMove) maxMove = m;
-      }
-      handStill = maxMove < STILL_THRESH;
-    }
-  }
-
-  if (handPresent) {
-    if (handStill) {
-      if (!stillSince) stillSince = now;
-    } else {
-      stillSince = 0;
-    }
-    // Copy landmarks for next frame comparison
-    prevLandmarks = lmList[0].map(l => ({ x: l.x, y: l.y }));
-  } else {
-    prevLandmarks = null;
-    stillSince    = 0;
-  }
-
-  // ── Status chip text ─────────────────────────────────────────────
   if (!handPresent) {
-    statusEl.textContent = "Show hand…";
-    statusEl.className   = "waiting";
-    if (!isFetching) {
-      badge.classList.remove("visible", "first-seen", "confirmed-anim");
-      lastLetter = ""; consecCount = 0;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    statusEl.textContent = "Show hand…"; statusEl.className = "waiting";
+    frameHist = []; holdLetter = null; lastConfirm = "";
+    hideBadge();
+    return;
+  }
+
+  drawSkeleton(lmList[0], canvas.width, canvas.height);
+  statusEl.textContent = "Hand detected"; statusEl.className = "detected";
+
+  // ── Classify this frame
+  const clsResult = classifyASL(lmList[0]);
+  if (!clsResult) return;
+
+  frameHist.push(clsResult[0].letter);
+  if (frameHist.length > HIST_FRAMES) frameHist.shift();
+
+  const { letter: voted, fraction } = majorityVote(frameHist);
+
+  // ── Hold & confirm
+  let holdFrac = 0;
+  if (fraction >= CONF_THRESH) {
+    if (holdLetter !== voted) {
+      holdLetter = voted;
+      holdStart  = now;
+      if (voted !== lastConfirm) lastConfirm = ""; // new letter → clear block
     }
-  } else if (now < cooldownUntil) {
-    const wait = Math.ceil((cooldownUntil - now) / 1000);
-    statusEl.textContent = `Rate limited — wait ${wait}s`;
-    statusEl.className   = "waiting";
-  } else if (isFetching) {
-    statusEl.textContent = "Reading sign…";
-    statusEl.className   = "detected";
-  } else if (!handStill || !stillSince) {
-    statusEl.textContent = "Hold still…";
-    statusEl.className   = "waiting";
+    const held = now - holdStart;
+    holdFrac = Math.min(1, held / HOLD_MS);
+
+    if (held >= HOLD_MS && voted !== lastConfirm) {
+      translated += voted;
+      lastConfirm = voted;
+      holdLetter  = null;
+      updateOutput();
+      flashConfirmed(voted);
+    }
   } else {
-    const heldMs = now - stillSince;
-    if (heldMs < STILL_MS) {
-      const pct = Math.round((heldMs / STILL_MS) * 100);
-      statusEl.textContent = `Hold still… ${pct}%`;
-      statusEl.className   = "detected";
-    } else {
-      statusEl.textContent = "Hand detected";
-      statusEl.className   = "detected";
-    }
+    holdLetter = null;
+    if (fraction < 0.35) lastConfirm = ""; // low confidence → allow re-confirm
   }
 
-  // ── Polling progress bar ─────────────────────────────────────────
-  if (!isFetching) {
-    const elapsed  = now - lastPollTime;
-    const progress = Math.min(1, elapsed / MIN_POLL_MS);
-    pollFill.style.width = `${progress * 100}%`;
-  }
-
-  // ── Trigger Gemini call ──────────────────────────────────────────
-  const stillEnough = stillSince && (now - stillSince >= STILL_MS);
-  const cooldownOk  = now >= cooldownUntil;
-  const timingOk    = now - lastPollTime >= MIN_POLL_MS;
-  if (handPresent && !isFetching && apiKey && stillEnough && cooldownOk && timingOk) {
-    callGemini(lmList[0]);
-    stillSince = 0;  // reset so same pose doesn't immediately re-trigger after MIN_POLL_MS
-  }
+  showBadge(voted, fraction, holdFrac, clsResult);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -778,8 +639,9 @@ function loop() {
 // ═══════════════════════════════════════════════════════════════════════
 document.getElementById("clear-btn").addEventListener("click", () => {
   translated  = "";
-  lastLetter  = "";
-  consecCount = 0;
+  lastConfirm = "";
+  holdLetter  = null;
+  frameHist   = [];
   updateOutput();
 });
 
@@ -808,9 +670,6 @@ const loaderStatus = document.getElementById("loader-status");
     statusEl.textContent = "Show hand…"; statusEl.className = "waiting";
     updateOutput();
     running = true; loop();
-
-    // Nudge user to enter API key if not set
-    if (!apiKey) setTimeout(() => apikeyInput.focus(), 700);
 
   } catch (err) {
     loaderStatus.textContent = "";
