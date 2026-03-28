@@ -352,8 +352,11 @@ import { HandLandmarker, FilesetResolver }
 const WASM_CDN     = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
 const MP_MODEL_URL = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
 const GEMINI_URL   = "https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent";
-const GEMINI_PROMPT = "Look at this hand. What ASL letter is being signed? Reply with ONLY a single capital letter A-Z, or NONE if no clear ASL letter is visible.";
-const POLL_MS      = 2000;   // ms between Gemini calls (free tier: 15 RPM max)
+const GEMINI_PROMPT = "This is a close-up of a hand making an ASL (American Sign Language) fingerspelling sign. What single letter A-Z is being signed? Reply with ONLY one capital letter. If unclear, reply NONE.";
+const MIN_POLL_MS  = 4000;   // minimum ms between Gemini calls
+const COOLDOWN_MS  = 15000;  // ms to wait after a 429 rate-limit error
+const STILL_MS     = 1500;   // ms hand must be still before capture
+const STILL_THRESH = 0.02;   // max per-landmark movement as fraction of hand size
 const CONFIRM_NEED = 2;      // consecutive same-letter responses needed to confirm
 
 const CONNECTIONS = [
@@ -374,6 +377,9 @@ let lastLetter    = "";   // last Gemini result
 let consecCount   = 0;    // consecutive same-letter count
 let isFetching    = false;
 let lastPollTime  = 0;
+let cooldownUntil = 0;     // performance.now() timestamp until which calls are blocked
+let stillSince    = 0;     // performance.now() when hand became still (0 = not still)
+let prevLandmarks = null;  // landmark snapshot from previous frame for stillness check
 let lastVidTime   = -1;
 let handPresent   = false;
 let running       = false;
@@ -478,40 +484,48 @@ function drawSkeleton(lm, w, h) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-//  FRAME CAPTURE  (mirrors the image to match what the user sees)
+//  FRAME CAPTURE  (crops to hand bounding box for a clear close-up)
 // ═══════════════════════════════════════════════════════════════════════
-function captureFrame() {
-  const w = video.videoWidth, h = video.videoHeight;
+function captureFrame(landmarks) {
+  const vw = video.videoWidth, vh = video.videoHeight;
+  // Compute bounding box from normalised landmark coordinates
+  let minX = 1, maxX = 0, minY = 1, maxY = 0;
+  for (const lm of landmarks) {
+    if (lm.x < minX) minX = lm.x;  if (lm.x > maxX) maxX = lm.x;
+    if (lm.y < minY) minY = lm.y;  if (lm.y > maxY) maxY = lm.y;
+  }
+  // Pad 40% on each side so fingers aren't clipped
+  const pw = (maxX - minX) * 0.40, ph = (maxY - minY) * 0.40;
+  minX = Math.max(0, minX - pw);  maxX = Math.min(1, maxX + pw);
+  minY = Math.max(0, minY - ph);  maxY = Math.min(1, maxY + ph);
+
+  const sx = minX * vw, sy = minY * vh;
+  const sw = (maxX - minX) * vw,  sh = (maxY - minY) * vh;
+  if (sw < 10 || sh < 10) return null;
+
   const c = document.createElement("canvas");
-  c.width = w; c.height = h;
-  const x = c.getContext("2d");
-  x.translate(w, 0); x.scale(-1, 1);   // mirror to match CSS transform
-  x.drawImage(video, 0, 0);
-  // Crop to centre 75% width to focus on the hand and reduce noise
-  const cw = Math.round(w * 0.75), ch = h;
-  const crop = document.createElement("canvas");
-  crop.width = cw; crop.height = ch;
-  crop.getContext("2d").drawImage(c, Math.round(w*0.125), 0, cw, ch, 0, 0, cw, ch);
-  return crop.toDataURL("image/jpeg", 0.85).split(",")[1];
+  c.width = Math.round(sw);  c.height = Math.round(sh);
+  c.getContext("2d").drawImage(video, sx, sy, sw, sh, 0, 0, c.width, c.height);
+  return c.toDataURL("image/jpeg", 0.90).split(",")[1];
 }
 
 // ═══════════════════════════════════════════════════════════════════════
 //  GEMINI API CALL
 // ═══════════════════════════════════════════════════════════════════════
-async function callGemini() {
-  if (!apiKey) {
-    setBadgeError("No API key");
-    return;
-  }
+async function callGemini(landmarks) {
+  if (!apiKey) { setBadgeError("No API key"); return; }
   if (isFetching) return;
+  const now = performance.now();
+  if (now < cooldownUntil) return;
 
   isFetching = true;
-  lastPollTime = performance.now();
+  lastPollTime = now;
   setBadgeFetching();
   pollFill.classList.add("fetching");
 
   try {
-    const imageB64 = captureFrame();
+    const imageB64 = captureFrame(landmarks);
+    if (!imageB64) throw new Error("Frame capture failed");
 
     const res = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
       method: "POST",
@@ -536,6 +550,9 @@ async function callGemini() {
       console.error("Gemini error:", res.status, msg, body);
       apibarStatus.textContent = statusLabel;
       apibarStatus.className = "err";
+      if (res.status === 429) {
+        cooldownUntil = performance.now() + COOLDOWN_MS;
+      }
       throw new Error(msg);
     }
 
@@ -599,7 +616,7 @@ function handleGeminiResult(raw) {
 // ═══════════════════════════════════════════════════════════════════════
 function setBadgeFetching() {
   badge.className = "visible fetching";
-  badgeSub.textContent  = "Analyzing…";
+  badgeSub.textContent  = "Reading sign…";
   badgeHint.textContent = "Gemini Vision";
 }
 
@@ -630,9 +647,14 @@ function flashConfirmed(letter) {
   void flashEl.offsetWidth;
   flashEl.classList.add("pop");
   setTimeout(() => flashEl.classList.remove("pop"), 600);
-  // Brief green pulse on badge
+  // Show confirmed message in badge briefly
   badge.classList.add("confirmed-anim");
-  setTimeout(() => badge.classList.remove("confirmed-anim"), 500);
+  badgeLtr.textContent = letter;
+  badgeSub.textContent = "✓ Letter confirmed";
+  setTimeout(() => {
+    badge.classList.remove("confirmed-anim");
+    setBadgeNone();
+  }, 900);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -662,34 +684,92 @@ function loop() {
   if (video.currentTime === lastVidTime) return;
   lastVidTime = video.currentTime;
 
+  const now = performance.now();
+
   // ── MediaPipe: detect hand presence & draw skeleton ──────────────
-  const result = detector.detectForVideo(video, performance.now());
+  const result = detector.detectForVideo(video, now);
   const lmList = result?.landmarks;
   handPresent  = !!(lmList?.length);
 
   if (handPresent) {
     drawSkeleton(lmList[0], canvas.width, canvas.height);
-    statusEl.textContent = "Hand detected"; statusEl.className = "detected";
   } else {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    statusEl.textContent = "Show hand…"; statusEl.className = "waiting";
+  }
+
+  // ── Hand stillness check ──────────────────────────────────────────
+  let handStill = false;
+  if (handPresent && prevLandmarks) {
+    const wrist  = lmList[0][0],  midMCP = lmList[0][9];
+    const hSize  = Math.hypot(midMCP.x - wrist.x, midMCP.y - wrist.y);
+    if (hSize > 0.001) {
+      let maxMove = 0;
+      for (let i = 0; i < lmList[0].length; i++) {
+        const m = Math.hypot(lmList[0][i].x - prevLandmarks[i].x,
+                             lmList[0][i].y - prevLandmarks[i].y) / hSize;
+        if (m > maxMove) maxMove = m;
+      }
+      handStill = maxMove < STILL_THRESH;
+    }
+  }
+
+  if (handPresent) {
+    if (handStill) {
+      if (!stillSince) stillSince = now;
+    } else {
+      stillSince = 0;
+    }
+    // Copy landmarks for next frame comparison
+    prevLandmarks = lmList[0].map(l => ({ x: l.x, y: l.y }));
+  } else {
+    prevLandmarks = null;
+    stillSince    = 0;
+  }
+
+  // ── Status chip text ─────────────────────────────────────────────
+  if (!handPresent) {
+    statusEl.textContent = "Show hand…";
+    statusEl.className   = "waiting";
     if (!isFetching) {
       badge.classList.remove("visible", "first-seen", "confirmed-anim");
       lastLetter = ""; consecCount = 0;
+    }
+  } else if (now < cooldownUntil) {
+    const wait = Math.ceil((cooldownUntil - now) / 1000);
+    statusEl.textContent = `Rate limited — wait ${wait}s`;
+    statusEl.className   = "waiting";
+  } else if (isFetching) {
+    statusEl.textContent = "Reading sign…";
+    statusEl.className   = "detected";
+  } else if (!handStill || !stillSince) {
+    statusEl.textContent = "Hold still…";
+    statusEl.className   = "waiting";
+  } else {
+    const heldMs = now - stillSince;
+    if (heldMs < STILL_MS) {
+      const pct = Math.round((heldMs / STILL_MS) * 100);
+      statusEl.textContent = `Hold still… ${pct}%`;
+      statusEl.className   = "detected";
+    } else {
+      statusEl.textContent = "Hand detected";
+      statusEl.className   = "detected";
     }
   }
 
   // ── Polling progress bar ─────────────────────────────────────────
   if (!isFetching) {
-    const elapsed  = performance.now() - lastPollTime;
-    const progress = Math.min(1, elapsed / POLL_MS);
+    const elapsed  = now - lastPollTime;
+    const progress = Math.min(1, elapsed / MIN_POLL_MS);
     pollFill.style.width = `${progress * 100}%`;
   }
 
-  // ── Trigger Gemini poll ──────────────────────────────────────────
-  const now = performance.now();
-  if (handPresent && !isFetching && apiKey && now - lastPollTime >= POLL_MS) {
-    callGemini();
+  // ── Trigger Gemini call ──────────────────────────────────────────
+  const stillEnough = stillSince && (now - stillSince >= STILL_MS);
+  const cooldownOk  = now >= cooldownUntil;
+  const timingOk    = now - lastPollTime >= MIN_POLL_MS;
+  if (handPresent && !isFetching && apiKey && stillEnough && cooldownOk && timingOk) {
+    callGemini(lmList[0]);
+    stillSince = 0;  // reset so same pose doesn't immediately re-trigger after MIN_POLL_MS
   }
 }
 
