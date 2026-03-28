@@ -166,7 +166,7 @@
     #badge.fetching #badge-spin { display: block; }
 
     #badge-meta { display: flex; flex-direction: column; gap: 3px; }
-    #badge-sub  { font-size: 0.78rem; font-weight: 600; color: var(--text); }
+    #badge-sub  { font-size: 0.78rem; font-weight: 600; color: var(--text); max-width: 180px; word-break: break-word; }
     #badge-hint { font-size: 0.62rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
 
     /* ── Flash animation on confirm ─────────────────────────────── */
@@ -526,15 +526,16 @@ async function callGemini() {
     });
 
     if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      const msg = err?.error?.message || `HTTP ${res.status}`;
-      if (res.status === 403 || res.status === 400) {
-        apibarStatus.textContent = "Bad key";
-        apibarStatus.className = "err";
-      } else if (res.status === 429) {
-        apibarStatus.textContent = "Rate limit";
-        apibarStatus.className = "err";
-      }
+      const body = await res.json().catch(() => ({}));
+      const msg = body?.error?.message || `HTTP ${res.status}`;
+      const statusLabel = res.status === 400 ? `400 Bad Request`
+                        : res.status === 401 ? `401 Unauthorized`
+                        : res.status === 403 ? `403 Forbidden`
+                        : res.status === 429 ? `429 Rate Limit`
+                        : `HTTP ${res.status}`;
+      console.error("Gemini error:", res.status, msg, body);
+      apibarStatus.textContent = statusLabel;
+      apibarStatus.className = "err";
       throw new Error(msg);
     }
 
@@ -547,7 +548,7 @@ async function callGemini() {
 
   } catch (err) {
     console.error("Gemini:", err.message);
-    setBadgeError(err.message.length > 30 ? "API error" : err.message);
+    setBadgeError(err.message);
   } finally {
     isFetching = false;
     pollFill.classList.remove("fetching");
